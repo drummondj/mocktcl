@@ -9,6 +9,8 @@ PASS, FAIL, ERROR, SKIP = "pass", "fail", "error", "skip"
 
 @dataclass
 class TestResult:
+    __test__ = False  # not a pytest test class
+
     file: str  # path relative to project root
     name: str
     status: str

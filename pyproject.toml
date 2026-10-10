@@ -10,6 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "John Drummond", email = "john@muopia.com" }]
 
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5"]
+
 [project.scripts]
 mocktcl = "mocktcl.cli:main"
 
@@ -21,3 +24,17 @@ mocktcl = ["tcl/*.tcl"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--cov --cov-report=term-missing"
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["mocktcl"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if __name__ == .__main__.:",
+]
