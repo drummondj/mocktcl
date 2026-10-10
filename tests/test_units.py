@@ -104,7 +104,7 @@ def test_collect_rejects_test_name_on_directory(tmp_path):
 
 def test_tcl_quoting():
     assert runner.tcl_str("") == "{}"
-    assert runner.tcl_str('a b\n{$x}[y];"\\') == 'a\\ b\\n\\{\\$x\\}\\[y\\]\;\\"\\\\'
+    assert runner.tcl_str('a b\n{$x}[y];"\\') == r'a\ b\n\{\$x\}\[y\]\;\"\\'
     assert runner.tcl_dict({"k": "v w"}) == "k v\\ w"
 
 
