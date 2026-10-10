@@ -21,6 +21,8 @@ and the design and status are in `plans/PLAN.md`. Read both before making large 
 - `src/mocktcl/cli.py`: argparse entry point (`mocktcl`).
 - `tests/`: pytest suite for mocktcl itself. Tcl fixture projects are written into `tmp_path` by the tests.
 - `examples/`: sample Tcl projects that use mocktcl.
+- `packaging/`: PyInstaller entry point and `build.sh` for the standalone binary. `.github/workflows/release.yml` builds it for linux-x86_64, linux-arm64 and macos-arm64, smoke-tests each binary, and publishes them when a `v*` tag is pushed.
+- `README.md` is written for Tcl users who may be new to testing and know nothing about Python. Keep that tone: plain words, step-by-step, every term explained.
 
 ## Invariants (don't break these)
 

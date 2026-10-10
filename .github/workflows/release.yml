@@ -1,0 +1,100 @@
+name: Release
+
+# Push a tag like v0.1.0 to build the binaries and publish a GitHub Release.
+# Pull requests that change packaging build the binaries without publishing.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04 # older glibc, so the binary runs on more Linux distros
+            target: linux-x86_64
+          - os: ubuntu-22.04-arm
+            target: linux-arm64
+          - os: macos-14
+            target: macos-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install . "pyinstaller==6.11.1"
+
+      - name: Build binary
+        run: packaging/build.sh "mocktcl-${{ matrix.target }}"
+
+      - name: Check version matches tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="$(dist/mocktcl-${{ matrix.target }} --version | cut -d' ' -f2)"
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "binary is $version but tag is $GITHUB_REF_NAME"; exit 1; }
+
+      - name: Install Tcl (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y tcl
+          echo "TCLSH=tclsh" >> "$GITHUB_ENV"
+
+      - name: Install Tcl (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install tcl-tk@8
+          echo "TCLSH=$(brew --prefix tcl-tk@8)/bin/tclsh8.6" >> "$GITHUB_ENV"
+
+      - name: Smoke test the binary on the example project
+        working-directory: examples/calculator
+        run: ../../dist/mocktcl-${{ matrix.target }} --tclsh "$TCLSH" -v --fail-under 90
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mocktcl-${{ matrix.target }}
+          path: dist/mocktcl-${{ matrix.target }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum mocktcl-* > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "mocktcl $GITHUB_REF_NAME" \
+            --generate-notes
