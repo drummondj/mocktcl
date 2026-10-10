@@ -136,7 +136,7 @@ timeout = 60
 ## Development
 
 ```sh
-python3 -m venv .venv && .venv/bin/pip install -e . pytest
-.venv/bin/pytest -q
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+.venv/bin/pytest -q        # fails below 100% line + branch coverage
 cd examples/calculator && ../../.venv/bin/mocktcl -v
 ```

@@ -6,8 +6,9 @@ and the design and status are in `plans/PLAN.md`. Read both before making large 
 
 ## Environment
 
-- Tcl 8.6 (`tclsh`). Python 3.12. The dev venv is `.venv/` (`python3 -m venv .venv && .venv/bin/pip install -e . pytest`).
-- Run the Python suite: `.venv/bin/pytest -q`
+- Tcl 8.6 (`tclsh`). Python 3.11+. The dev venv is `.venv/` (`python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'`).
+- Run the Python suite: `.venv/bin/pytest -q`. It enforces **100% line and branch coverage** of `src/mocktcl` and treats warnings as errors.
+- CI: `.github/workflows/ci.yml` runs pytest on Python 3.11–3.13 with Tcl 8.6, then runs mocktcl on `examples/calculator`.
 - Run the tool against the example project: `cd examples/calculator && ../../.venv/bin/mocktcl`
 
 ## Layout
@@ -33,4 +34,5 @@ and the design and status are in `plans/PLAN.md`. Read both before making large 
 
 - Python: standard library only at runtime (no third-party deps). Type hints, dataclasses.
 - Tcl: must run on 8.6. Avoid 9.0-only commands. Fully qualify the framework's own command names (`::mocktcl::…`).
+- Coverage must stay at 100% (lines and branches). Cover new code with tests. Delete unreachable code instead of excluding it; `# pragma: no cover` is not used.
 - Every behaviour change gets a pytest test. Harness behaviour is tested end-to-end by running `tclsh` on small fixture projects.

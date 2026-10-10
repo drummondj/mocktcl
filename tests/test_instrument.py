@@ -238,3 +238,64 @@ def test_command_substitutions_are_instrumented():
     assert len(manifest.branch_probes) == 2
     covered = {manifest.line_probes[p] for p in hits if p in manifest.line_probes}
     assert {4, 7} <= covered
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        "while x",  # wrong word count for a fixed resolver
+        "dict get d k",
+        "uplevel $lvl {set a 1}",  # level isn't a literal level
+        "try",
+        "proc {*}$args",
+        "if {x}",
+        "if {x} {set a 1} else",
+        "if {x} {set a 1} else {set b 2} extra",
+        "switch -exact",
+        "switch $x $arms",
+        "switch $x {a}",
+    ],
+)
+def test_unusual_or_malformed_commands_get_only_a_line_probe(script):
+    text, manifest = inst(script)
+    assert manifest.error is None
+    assert text.count("::mocktcl::_l") == 1
+    assert not manifest.branch_probes
+
+
+def test_try_stops_at_unknown_handler_keyword():
+    _, manifest = inst("try {set a 1} bogus {set b 2}")
+    assert len(manifest.line_probes) == 2
+
+
+def test_uplevel_without_level():
+    _, manifest = inst("uplevel {set a 1}")
+    assert len(manifest.line_probes) == 2
+
+
+def test_try_handlers_and_fallthrough():
+    text, manifest = inst("try {set a 1} on error {} - trap {X} {} {set b 2} finally {set c 3}")
+    assert len(manifest.line_probes) == 4  # try + 3 bodies; '-' is not a body
+    assert "- trap" in text
+
+
+def test_switch_with_empty_arm_list():
+    _, manifest = inst("switch $x {}")
+    assert sorted(manifest.branch_probes.values()) == [(1, 0, 0)]  # only the implicit default
+
+
+def test_main_prints_instrumented_source(tmp_path, capsys):
+    from mocktcl.instrument import main
+
+    good = tmp_path / "good.tcl"
+    good.write_text("set a 1\n")
+    assert main([str(good)]) == 0
+    assert capsys.readouterr().out == "::mocktcl::_l 1; set a 1\n"
+
+    bad = tmp_path / "bad.tcl"
+    bad.write_text("proc f {} {\n")
+    assert main([str(bad)]) == 1
+    assert "parse error" in capsys.readouterr().err
+
+    assert main([]) == 2
+    assert "usage" in capsys.readouterr().err

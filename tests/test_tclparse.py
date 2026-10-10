@@ -83,3 +83,43 @@ def test_parse_list():
 def test_malformed_input_raises(bad):
     with pytest.raises(TclParseError):
         TclSource(bad).parse_script()
+
+
+def test_command_literal_out_of_range():
+    cmd = TclSource("set a").parse_script()[0]
+    assert cmd.literal(5) is None
+    assert cmd.literal(-1) is None
+
+
+def test_backslash_newline_between_commands():
+    assert words("set a 1\n\\\nset b 2") == [["set", "a", "1"], ["set", "b", "2"]]
+
+
+def test_comment_at_end_of_text():
+    assert words("set a 1\n# trailing") == [["set", "a", "1"]]
+
+
+def test_braced_word_followed_by_backslash_newline():
+    assert words("list {a}\\\n {b}") == [["list", "{a}", "{b}"]]
+
+
+def test_escaped_quote_in_quoted_word():
+    assert words(r'puts "a\"b" c') == [["puts", r'"a\"b"', "c"]]
+
+
+def test_backslash_newline_ends_bare_word():
+    assert words("set a b\\\nc") == [["set", "a", "b", "c"]]
+
+
+def test_array_index_with_escapes_and_variables():
+    assert words(r"puts $a(\)x$b) y") == [["puts", r"$a(\)x$b)", "y"]]
+
+
+def test_unterminated_braced_variable_name():
+    with pytest.raises(TclParseError, match="variable name"):
+        TclSource("puts ${abc").parse_script()
+
+
+def test_brackets_are_plain_text_in_list_quotes():
+    text = '"a[b" c'
+    assert [w.literal for w in TclSource(text).parse_list(0, len(text))] == ["a[b", "c"]

@@ -157,7 +157,7 @@ def run_file(tf: TestFile, cfg: RunConfig, index: int) -> FileResult:
 def run_files(
     files: list[TestFile],
     cfg: RunConfig,
-    on_result: Callable[[FileResult], None] | None = None,
+    on_result: Callable[[FileResult], None],
     stop_on_fail: bool = False,
 ) -> RunResult:
     run = RunResult()
@@ -180,8 +180,7 @@ def run_files(
     gen = results()
     for fr in gen:
         run.files.append(fr)
-        if on_result:
-            on_result(fr)
+        on_result(fr)
         if stop_on_fail and fr.failed:
             gen.close()
             break

@@ -143,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
                 elif kind == "lcov":
                     lcov_report.write(data, root, dest)
                     console.write(f"lcov report written to {dest}")
-                elif kind == "html":
+                else:
                     index = html_report.write(data, dest)
                     console.write(f"HTML report written to {index}")
             if fail_under is not None and data.line_percent < fail_under:

@@ -6,3 +6,6 @@ dist/
 .pytest_cache/
 coverage_html/
 lcov.info
+.coverage
+.coverage.*
+coverage.xml

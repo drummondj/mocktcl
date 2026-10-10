@@ -178,3 +178,74 @@ def test_unparseable_source_reported(project, run_cli):
     root = project({**SIMPLE, "src/broken.tcl": "proc b {} {\n"})
     code, out = run_cli(root)
     assert "not instrumented" in out
+
+
+def test_unknown_report_type(project, run_cli):
+    root = project(SIMPLE)
+    code, out = run_cli(root, "--cov-report", "xml")
+    assert code == 2
+    assert "unknown coverage report type: xml" in out
+
+
+def test_very_quiet_hides_text_report_and_header(project, run_cli):
+    root = project(SIMPLE)
+    code, out = run_cli(root, "-qq")
+    assert code == 0
+    assert "Line%" not in out and "mocktcl:" not in out
+
+
+def test_fail_under_with_failing_tests_keeps_exit_code(project, run_cli):
+    root = project({**SIMPLE, "tests/test_bad.tcl": "proc test_bad {} { expect 1 2 }\n"})
+    code, out = run_cli(root, "--fail-under", "100")
+    assert code == 1
+    assert "below --fail-under" in out
+
+
+def test_keep_tmp(project, run_cli):
+    root = project(SIMPLE)
+    code, out = run_cli(root, "--keep-tmp")
+    kept = Path(out.split("temp files kept in ")[1].split()[0])
+    try:
+        assert (kept / "results_0.jsonl").is_file()
+        assert any((kept / "instrumented").iterdir())
+    finally:
+        shutil.rmtree(kept)
+
+
+def test_unparseable_source_skipped_by_lcov_and_html(project, run_cli):
+    root = project({**SIMPLE, "src/broken.tcl": "proc b {} {\n"})
+    run_cli(root, "--cov-report", "lcov", "--cov-report", "html")
+    assert "broken.tcl" not in (root / "lcov.info").read_text()
+    assert "not instrumented" in (root / "coverage_html" / "index.html").read_text()
+
+
+def test_cov_single_file_and_omitted_file(project, run_cli):
+    root = project({**SIMPLE, "src/other.tcl": "set a 1\n"})
+    code, out = run_cli(root, "--cov", "src/m.tcl", "--cov", "src/other.tcl", "--cov-omit", "other.tcl")
+    assert "src/m.tcl" in out and "src/other.tcl" not in out
+
+
+def test_cov_path_inside_tests_dir_is_excluded(project, run_cli):
+    root = project({**SIMPLE, "tests/helper.tcl": "set a 1\n"})
+    code, out = run_cli(root, "--cov", "tests")
+    assert "helper.tcl" not in out
+    assert "TOTAL" in out
+
+
+def test_verbose_shows_file_errors(project, run_cli):
+    root = project({"tests/test_a.tcl": "error {cannot load}\n"})
+    code, out = run_cli(root, "--no-cov", "-v")
+    assert code == 1
+    assert "tests/test_a.tcl ERROR cannot load" in out
+
+
+def test_module_entry_point(monkeypatch, capsys):
+    import runpy
+
+    import pytest
+
+    monkeypatch.setattr("sys.argv", ["mocktcl", "--version"])
+    with pytest.raises(SystemExit) as exc:
+        runpy.run_module("mocktcl", run_name="__main__")
+    assert exc.value.code == 0
+    assert "mocktcl 0.1.0" in capsys.readouterr().out

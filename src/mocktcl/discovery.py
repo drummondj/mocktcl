@@ -17,6 +17,8 @@ class SelectionError(ValueError):
 
 @dataclass
 class TestFile:
+    __test__ = False  # not a pytest test class
+
     path: Path  # absolute
     rel: str  # relative to project root, '/'-separated
     tests: list[str]  # statically discovered test procs, definition order
@@ -47,11 +49,6 @@ def top_level_procs(text: str) -> dict[str, int]:
             name = name[2:] if name.startswith("::") else name
             procs.setdefault(name, cmd.words[3].line)
     return procs
-
-
-def static_tests(text: str) -> list[str]:
-    """Names of top-level ``proc test_*`` definitions, in definition order."""
-    return [n for n in top_level_procs(text) if n.startswith(TEST_PREFIX) and "::" not in n]
 
 
 def _walk(directory: Path) -> list[Path]:

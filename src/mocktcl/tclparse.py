@@ -104,8 +104,7 @@ class TclSource:
                 i = self._comment(i, end)
             else:
                 cmd, i = self._command(i, end, nested)
-                if cmd.words:
-                    cmds.append(cmd)
+                cmds.append(cmd)
         return cmds, i
 
     def _comment(self, i: int, end: int) -> int:
@@ -228,8 +227,7 @@ class TclSource:
         _, k = self._script(i + 1, end, nested=True)
         if k >= end or self.text[k] != "]":
             raise self._error("missing close-bracket", i)
-        if self._substs:
-            self._substs[-1].append((i + 1, k))
+        self._substs[-1].append((i + 1, k))
         return k + 1
 
     def _bare(self, i: int, end: int, nested: bool, list_mode: bool) -> int:

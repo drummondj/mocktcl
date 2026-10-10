@@ -5,17 +5,12 @@ from __future__ import annotations
 from .model import CoverageData, line_ranges, pct
 
 
-def render(data: CoverageData, show_missing: bool = True) -> str:
-    header = ["File", "Lines", "Miss", "Line%", "Branches", "BrMiss", "Branch%"]
-    if show_missing:
-        header.append("Missing")
+def render(data: CoverageData) -> str:
+    header = ["File", "Lines", "Miss", "Line%", "Branches", "BrMiss", "Branch%", "Missing"]
     rows: list[list[str]] = []
     for f in data.files:
         if f.error:
-            row = [f.path, "-", "-", "-", "-", "-", "-"]
-            if show_missing:
-                row.append(f"not instrumented: {f.error}")
-            rows.append(row)
+            rows.append([f.path, "-", "-", "-", "-", "-", "-", f"not instrumented: {f.error}"])
             continue
         row = [
             f.path,
@@ -25,9 +20,8 @@ def render(data: CoverageData, show_missing: bool = True) -> str:
             str(f.branches_total),
             str(f.branches_total - f.branches_hit),
             f"{pct(f.branches_hit, f.branches_total):.1f}%",
+            line_ranges(f.missing_lines),
         ]
-        if show_missing:
-            row.append(line_ranges(f.missing_lines))
         rows.append(row)
     total = [
         "TOTAL",
@@ -37,9 +31,8 @@ def render(data: CoverageData, show_missing: bool = True) -> str:
         str(data.branches_total),
         str(data.branches_total - data.branches_hit),
         f"{pct(data.branches_hit, data.branches_total):.1f}%",
+        "",
     ]
-    if show_missing:
-        total.append("")
 
     table = [header, *rows, total]
     widths = [max(len(r[i]) for r in table) for i in range(len(header))]

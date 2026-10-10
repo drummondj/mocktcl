@@ -6,8 +6,9 @@ description: Run mocktcl's own test suite and the example Tcl projects to verify
 # Verifying a mocktcl change
 
 1. Make sure the venv exists. If it doesn't, create it:
-   `python3 -m venv .venv && .venv/bin/pip install -q -e . pytest`
+   `python3 -m venv .venv && .venv/bin/pip install -q -e '.[dev]'`
 2. Unit and end-to-end tests: `.venv/bin/pytest -q`
+   - Coverage must be 100% for lines and branches. If it drops, the run fails and lists the missing lines/branches. Add tests for them, or delete the code if it is unreachable.
    - To narrow down: `.venv/bin/pytest -q tests/test_instrument.py -k switch`
 3. Dogfood on the example project:
    `cd examples/calculator && ../../.venv/bin/mocktcl -v --cov-report text --cov-report html:/tmp/mocktcl-html`
