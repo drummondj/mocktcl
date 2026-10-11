@@ -10,6 +10,7 @@ from .conftest import requires_tcl
 pytestmark = requires_tcl
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "calculator"
+SDC_EXAMPLE = EXAMPLE.parent / "sdc"
 
 SIMPLE = {
     "src/m.tcl": """
@@ -40,6 +41,15 @@ def test_example_project(run_cli, tmp_path):
     assert "src/calc.tcl" in out and "src/report.tcl" in out
     assert (root / "lcov.info").is_file()
     assert (root / "coverage_html" / "index.html").is_file()
+
+
+def test_sdc_example_project(run_cli, tmp_path):
+    root = tmp_path / "sdc"
+    shutil.copytree(SDC_EXAMPLE, root)
+    code, out = run_cli(root, "--fail-under", "100")
+    assert code == 0, out
+    assert "6 passed" in out
+    assert "constraints/top.sdc" in out and "100.0%" in out
 
 
 def test_runs_all_tests_recursively_by_default(project, run_cli):
