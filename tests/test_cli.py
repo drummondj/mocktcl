@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from mocktcl import __version__
 from mocktcl.cli import main
 
 from .conftest import TCLSH, requires_tcl
@@ -304,7 +305,7 @@ def test_module_entry_point(monkeypatch, capsys):
     with pytest.raises(SystemExit) as exc:
         runpy.run_module("mocktcl", run_name="__main__")
     assert exc.value.code == 0
-    assert "mocktcl 0.1.0" in capsys.readouterr().out
+    assert capsys.readouterr().out == f"mocktcl {__version__}\n"
 
 
 def test_closed_output_pipe_exits_quietly(project, monkeypatch, tmp_path):
