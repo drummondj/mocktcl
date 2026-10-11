@@ -33,3 +33,7 @@ jobs:
       - name: Dogfood on the example project
         working-directory: examples/calculator
         run: mocktcl -v --fail-under 90
+
+      - name: Dogfood on the SDC example
+        working-directory: examples/sdc
+        run: mocktcl -v --fail-under 100

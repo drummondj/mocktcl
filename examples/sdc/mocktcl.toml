@@ -1,0 +1,2 @@
+# SDC files don't end in .tcl, so name the file to measure explicitly.
+cov = ["constraints/top.sdc"]

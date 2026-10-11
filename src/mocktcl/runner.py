@@ -17,6 +17,10 @@ from .results import ERROR, FileResult, RunResult, TestResult
 
 _TCL_SPECIAL = set(' \t\r;$[]{}"\\')
 
+# Numbers this close to zero count as zero in expect. Far below any real value
+# in the units EDA tools use (ns, pF, um...), so it only absorbs rounding noise.
+DEFAULT_FLOAT_ZERO_TOLERANCE = 1e-12
+
 
 def tcl_str(s: str) -> str:
     """Quote a string as a single Tcl list element using backslash escapes."""
@@ -55,6 +59,7 @@ class RunConfig:
     capture: bool = True
     jobs: int = 1
     timeout: float | None = None
+    float_zero_tolerance: float = DEFAULT_FLOAT_ZERO_TOLERANCE
 
 
 _PROC_FRAME = re.compile(r'\(procedure "(?:::)?([^"]+)" line (\d+)\)')
@@ -83,6 +88,7 @@ def run_file(tf: TestFile, cfg: RunConfig, index: int) -> FileResult:
         "filter": cfg.keyword.lower(),
         "instrumented": tcl_dict(cfg.tcl_map),
         "results": str(results_file),
+        "float_zero_tol": repr(float(cfg.float_zero_tolerance)),
     }
     job_file.write_text(tcl_dict(job), encoding="utf-8")
     result = FileResult(tf.rel)

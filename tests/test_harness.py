@@ -264,3 +264,104 @@ def test_package_require_is_covered(project, run_cli):
     lcov = (root / "lcov.info").read_text()
     assert "mypkg.tcl" in lcov
     assert "DA:2,1" in lcov
+
+
+def test_float_rounding_is_tolerated(project, run_cli):
+    root = project({"tests/test_a.tcl": """
+        proc test_tolerant {} {
+            expect [expr 10 * 0.66] 6.6
+            expect [expr {0.1 + 0.2}] 0.3
+            expect 5.0 5
+            expect 2.5e-9 [expr {2.5 * 1e-9}]
+            expect Inf Inf
+            expect_not 6.6 6.0
+            expect_not 1.0000001 1.0
+            expect_not 10000000000000000001 10000000000000000000
+            expect_not Inf 1e308
+            expect_not NaN 1.0
+            expect_not abc 1.0
+        }
+    """})
+    code, out = run_cli(root, "--no-cov", "-v")
+    assert code == 0, out
+
+
+def test_float_tolerance_limits(project, run_cli):
+    root = project({"tests/test_a.tcl": """
+        proc test_not_with_rounding_noise {} { expect_not 6.6 [expr 10 * 0.66] }
+        proc test_not_with_zero_noise {} { expect_not [expr {0.1 + 0.2 - 0.3}] 0 }
+    """})
+    code, out = run_cli(root, "--no-cov")
+    assert code == 1
+    assert 'expected value other than "6.6000000000000005"' in out
+    assert 'expected value other than "0"' in out
+
+
+def test_expect_near(project, run_cli):
+    root = project({"tests/test_a.tcl": """
+        proc test_pass {} {
+            expect_near 6.62 6.6 0.05
+            expect_near 6.6 6.6 0
+            expect_near 6.601 6.6 0.001
+            expect_near 6.599 6.6 0.001
+            expect_near [expr {0.1 + 0.2 - 0.3}] 0 1e-12
+        }
+        proc test_fail {} { expect_near 6.0 6.6 0.001 "input delay" }
+        proc test_negative_tolerance {} { expect_near 6.0 6.6 -1 }
+        proc test_text {} { expect_near abc 6.6 0.1 }
+        proc test_nan {} { expect_near NaN 6.6 0.1 }
+        proc test_missing_tolerance {} { expect_near 6.0 6.6 }
+    """})
+    code, out = run_cli(root, "--no-cov", "-v")
+    assert code == 1
+    assert "test_pass PASSED" in out
+    assert 'input delay\nexpected "6.6" +/- 0.001 but got "6.0" (difference 0.6)' in out
+    assert 'tolerance must not be negative but got "-1"' in out
+    assert 'actual must be a number but got "abc"' in out
+    assert 'actual must be a number but got "NaN"' in out
+    assert 'should be "expect_near actual expected tolerance ?message?"' in out
+
+
+ZERO_TESTS = {"tests/test_a.tcl": """
+    proc test_noise {} { expect [expr {0.1 + 0.2 - 0.3}] 0 }
+    proc test_zero_first {} { expect 0.0 [expr {0.1 + 0.2 - 0.3}] }
+    proc test_bigger_noise {} { expect [expr {1e6 + 0.1 - 1e6 - 0.1}] 0 }
+    proc test_real_difference {} { expect 0.5 0 }
+    proc test_integer {} { expect 1 0 }
+"""}
+
+HINT = '(if this is floating-point rounding noise, use "expect_near <value> 0 <tolerance>", ' \
+    "or change float_zero_tolerance in mocktcl.toml, currently {}"
+
+
+def test_zero_tolerance_default_absorbs_small_noise(project, run_cli):
+    root = project(ZERO_TESTS)
+    code, out = run_cli(root, "--no-cov")
+    assert code == 1
+    assert "tests/test_a.tcl ..FFF" in out
+    assert out.count(HINT.format("1e-12")) == 1  # only for the tiny decimal difference
+    assert 'expected "0" but got "0.5"\n\n' in out
+
+
+def test_float_zero_tolerance_from_cli(project, run_cli):
+    root = project(ZERO_TESTS)
+    code, out = run_cli(root, "--no-cov", "--float-zero-tolerance", "0")
+    assert "tests/test_a.tcl FFFFF" in out
+    assert out.count(HINT.format("0.0")) == 3
+    code, out = run_cli(root, "--no-cov", "--float-zero-tolerance", "1e-9")
+    assert "tests/test_a.tcl ...FF" in out
+
+
+def test_float_zero_tolerance_from_config(project, run_cli):
+    root = project({**ZERO_TESTS, "mocktcl.toml": "float_zero_tolerance = 0\n"})
+    code, out = run_cli(root, "--no-cov")
+    assert "tests/test_a.tcl FFFFF" in out
+    code, out = run_cli(root, "--no-cov", "--float-zero-tolerance", "1e-12")
+    assert "tests/test_a.tcl ..FFF" in out
+
+
+def test_negative_float_zero_tolerance(project, run_cli):
+    root = project(ZERO_TESTS)
+    code, out = run_cli(root, "--float-zero-tolerance", "-1")
+    assert code == 2
+    assert "float_zero_tolerance must not be negative" in out

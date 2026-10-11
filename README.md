@@ -333,13 +333,63 @@ tests/
 
 | Command | The test passes when... | Example |
 |---|---|---|
-| `expect A B` | A equals B. Numbers are compared as numbers, so `2` equals `2.0`. | `expect [add 1 2] 3` |
+| `expect A B` | A equals B. Numbers are compared as numbers, so `2` equals `2.0`, and tiny rounding errors in decimals are ignored ([see below](#comparing-decimal-numbers)). | `expect [add 1 2] 3` |
 | `expect_not A B` | A does **not** equal B | `expect_not [new_id] ""` |
+| `expect_near A B T` | the number A is within T of the number B | `expect_near $slack 0.12 0.001` |
 | `expect_contains A B` | the text B appears somewhere inside A | `expect_contains [greet Ada] "Ada"` |
 | `expect_list A B` | lists A and B hold the same items, in any order | `expect_list [colors] {red green blue}` |
 | `expect_list_contains A B` | list A holds every item in list B (A may hold more) | `expect_list_contains [colors] {red}` |
 | `expect_error {script} pattern` | running the script causes an error, and the message matches the pattern. `*` means "any text". | `expect_error {divide 1 0} "*divide by zero*"` |
 | `expect_called name N` | the mock called `name` ran exactly N times in this test (see [mocks](#7-replacing-commands-during-a-test-mocks)) | `expect_called send_email 1` |
+
+### Comparing decimal numbers
+
+Computers store most decimal numbers slightly inaccurately. In Tcl, `expr 10 * 0.66`
+gives `6.6000000000000005`, not `6.6`. This isn't a bug in your code. It's how
+every programming language handles decimals.
+
+`expect` and `expect_not` allow for this automatically. When either value is a decimal number,
+the two count as equal if they differ by less than one part in a billion. So this passes:
+
+```tcl
+expect [expr 10 * 0.66] 6.6
+```
+
+A real mistake still fails: `6.0` is never treated as equal to `6.6`. Whole numbers and text are always
+compared exactly.
+
+**When the answer should be zero.** "One part in a billion" of zero is zero, so comparisons with zero use a
+separate, fixed allowance instead: any number within `1e-12` (0.000000000001) of zero counts as zero. So this
+passes, even though Tcl gives `5.551115123125783e-17` rather than `0`:
+
+```tcl
+expect [expr {0.1 + 0.2 - 0.3}] 0
+```
+
+`1e-12` is far smaller than any real value in the units EDA tools use, such as ns, ps, pF or um, so it only
+ever hides rounding noise. You can change it in your [configuration file](#13-saving-your-settings-configuration-file):
+
+- If your values are in base units such as seconds or farads, `1e-12` is a normal value (one picosecond, or one
+  picofarad). Set `float_zero_tolerance = 0` so comparisons with zero are exact.
+- Rounding noise grows with the size of the numbers in the calculation. `1e-12` covers calculations with values
+  up to a few thousand. Calculations with larger values, such as die coordinates in um, can leave bigger
+  noise.
+
+When a comparison with zero fails by a tiny amount, the message points this out:
+
+```
+expect failed: expected "0" but got "-2.3283069916502086e-11"
+(if this is floating-point rounding noise, use "expect_near <value> 0 <tolerance>", or change float_zero_tolerance in mocktcl.toml, currently 1e-12)
+```
+
+To allow a bigger difference for one check only, use `expect_near`, for example `expect_near $offset 0 1e-9`.
+
+**When "close enough" has a real meaning**, such as a timing value that only needs to be correct to the
+nearest picosecond, use `expect_near` and give the allowed difference:
+
+```tcl
+expect_near $delay 6.6 0.001   ;# delay in ns: passes for anything from 6.599 to 6.601
+```
 
 **Adding your own failure message.** Every check accepts an extra last argument: a message
 that's shown if the check fails. This helps explain *why* the value matters:
@@ -514,6 +564,7 @@ Run these from your project folder.
 | Show `puts` output as the tests run | `mocktcl -s` |
 | Give up on a test file that takes longer than 60 seconds | `mocktcl --timeout 60` |
 | Use a particular Tcl | `mocktcl --tclsh /path/to/tclsh8.6` |
+| Compare with zero exactly, instead of allowing for rounding noise ([why](#comparing-decimal-numbers)) | `mocktcl --float-zero-tolerance 0` |
 | See every option | `mocktcl --help` |
 
 By default mocktcl captures anything your tests print with `puts`, and shows it only for
@@ -641,6 +692,7 @@ jobs = 4                           # run 4 test files at once
 timeout = 60                       # give up on a test file after 60 seconds
 tests_dir = "tests"                # where the tests live
 tclsh = "/opt/homebrew/opt/tcl-tk@8/bin/tclsh8.6"   # which Tcl to use (handy on a Mac)
+float_zero_tolerance = 1e-12       # numbers this close to zero count as zero (the default; 0 = exact)
 ```
 
 Every line is optional. Anything you type on the command line overrides the file.

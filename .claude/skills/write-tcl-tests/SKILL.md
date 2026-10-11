@@ -25,6 +25,8 @@ proc after_all {} { ... }     ;# optional, once per file
 proc test_add {} {
     expect [calc::add 1 2] 3
     expect_not [calc::add 1 2] 4 "addition is broken"
+    expect [expr 10 * 0.66] 6.6                    ;# float rounding noise is tolerated
+    expect_near $slack 0.12 0.001                  ;# explicit tolerance
     expect_contains [calc::describe 5] "five"
     expect_list [calc::factors 12] {6 2 4 3 1 12}
     expect_list_contains [calc::factors 12] {2 3}
@@ -43,6 +45,11 @@ proc test_not_ready {} { skip "waiting on upstream fix" }
 
 Rules:
 - Each assertion takes an optional extra argument, a custom failure message.
+- `expect`/`expect_not` compare decimal numbers with a relative tolerance of 1e-9, and compare integers
+  and strings exactly. When one side is zero, an absolute tolerance is used instead:
+  `float_zero_tolerance`, which defaults to 1e-12 (set in mocktcl.toml or with `--float-zero-tolerance`; 0 = exact). Use `expect_near` for explicit tolerances.
+- See `examples/sdc` for testing proc-less scripts such as SDC constraints. Read them at global level
+  (`uplevel #0 source`), mock the tool's commands, and inspect their arguments with `mock_calls`.
 - A mock lasts for the test it was created in (including `before_each`). A mock created at file
   level or in `before_all` lasts for the whole file.
 - Don't mock `proc`, `rename`, `namespace`, `uplevel`, `info`, `source` or `catch`.
