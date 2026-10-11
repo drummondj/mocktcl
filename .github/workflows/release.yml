@@ -1,7 +1,8 @@
 name: Release
 
-# Push a tag like v0.1.0 to build the binaries and publish a GitHub Release.
-# Pull requests that change packaging build the binaries without publishing.
+# Push a tag like v0.1.0 to build the binaries and the Python package, publish a
+# GitHub Release and upload the package to PyPI.
+# Pull requests that change packaging build everything without publishing.
 on:
   push:
     tags: ["v*"]
@@ -9,6 +10,7 @@ on:
     paths:
       - ".github/workflows/release.yml"
       - "packaging/**"
+      - "pyproject.toml"
   workflow_dispatch:
 
 permissions:
@@ -73,6 +75,65 @@ jobs:
           path: dist/mocktcl-${{ matrix.target }}
           if-no-files-found: error
 
+  python-package:
+    name: Build Python package
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: pip install build twine && python -m build
+
+      - name: Check package metadata
+        run: twine check --strict dist/*
+
+      - name: Install the wheel into a clean environment
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/pip install dist/*.whl
+
+      - name: Check version matches tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="$(/tmp/wheel-env/bin/mocktcl --version | cut -d' ' -f2)"
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "package is $version but tag is $GITHUB_REF_NAME"; exit 1; }
+
+      - name: Install Tcl
+        run: sudo apt-get update && sudo apt-get install -y tcl
+
+      - name: Smoke test the wheel on the example project
+        working-directory: examples/calculator
+        run: /tmp/wheel-env/bin/mocktcl -v --fail-under 90
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-package
+          path: dist/
+          if-no-files-found: error
+
+  pypi:
+    name: Publish to PyPI
+    needs: [build, python-package]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/mocktcl/
+    permissions:
+      id-token: write # PyPI Trusted Publishing: no API token is stored in the repo
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-package
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
   publish:
     name: Publish GitHub Release
     needs: build
@@ -84,6 +145,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: mocktcl-*
           merge-multiple: true
 
       - uses: actions/checkout@v4
