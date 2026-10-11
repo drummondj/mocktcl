@@ -802,7 +802,7 @@ git push origin v0.2.0
 
 GitHub Actions then tests the code, builds the Linux and macOS programs, tries each one on the example
 project, and publishes them to the [Releases page](https://github.com/drummondj/mocktcl/releases)
-together with `SHA256SUMS.txt`. To build a program on your own computer:
+together with `SHA256SUMS.txt` and `LICENSE`. To build a program on your own computer:
 `.venv/bin/pip install pyinstaller && PYTHON=.venv/bin/python packaging/build.sh`.
 
 ---
