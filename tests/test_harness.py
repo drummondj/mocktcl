@@ -288,13 +288,13 @@ def test_float_rounding_is_tolerated(project, run_cli):
 
 def test_float_tolerance_limits(project, run_cli):
     root = project({"tests/test_a.tcl": """
-        proc test_zero_is_exact {} { expect [expr {0.1 + 0.2 - 0.3}] 0 }
         proc test_not_with_rounding_noise {} { expect_not 6.6 [expr 10 * 0.66] }
+        proc test_not_with_zero_noise {} { expect_not [expr {0.1 + 0.2 - 0.3}] 0 }
     """})
     code, out = run_cli(root, "--no-cov")
     assert code == 1
-    assert 'expected "0" but got "5.551115123125783e-17"' in out
     assert 'expected value other than "6.6000000000000005"' in out
+    assert 'expected value other than "0"' in out
 
 
 def test_expect_near(project, run_cli):
@@ -325,34 +325,39 @@ def test_expect_near(project, run_cli):
 ZERO_TESTS = {"tests/test_a.tcl": """
     proc test_noise {} { expect [expr {0.1 + 0.2 - 0.3}] 0 }
     proc test_zero_first {} { expect 0.0 [expr {0.1 + 0.2 - 0.3}] }
+    proc test_bigger_noise {} { expect [expr {1e6 + 0.1 - 1e6 - 0.1}] 0 }
     proc test_real_difference {} { expect 0.5 0 }
     proc test_integer {} { expect 1 0 }
 """}
 
+HINT = '(if this is floating-point rounding noise, use "expect_near <value> 0 <tolerance>", ' \
+    "or change float_zero_tolerance in mocktcl.toml, currently {}"
 
-def test_zero_comparison_is_exact_by_default_with_hint(project, run_cli):
+
+def test_zero_tolerance_default_absorbs_small_noise(project, run_cli):
     root = project(ZERO_TESTS)
     code, out = run_cli(root, "--no-cov")
     assert code == 1
-    assert "tests/test_a.tcl FFFF" in out
-    hint = '(if this is floating-point rounding noise, use "expect_near <value> 0 <tolerance>", ' \
-        "or set float_zero_tolerance in mocktcl.toml)"
-    assert out.count(hint) == 2  # only for the tiny decimal differences
+    assert "tests/test_a.tcl ..FFF" in out
+    assert out.count(HINT.format("1e-12")) == 1  # only for the tiny decimal difference
     assert 'expected "0" but got "0.5"\n\n' in out
 
 
 def test_float_zero_tolerance_from_cli(project, run_cli):
     root = project(ZERO_TESTS)
-    code, out = run_cli(root, "--no-cov", "--float-zero-tolerance", "1e-12")
-    assert "tests/test_a.tcl ..FF" in out
+    code, out = run_cli(root, "--no-cov", "--float-zero-tolerance", "0")
+    assert "tests/test_a.tcl FFFFF" in out
+    assert out.count(HINT.format("0.0")) == 3
+    code, out = run_cli(root, "--no-cov", "--float-zero-tolerance", "1e-9")
+    assert "tests/test_a.tcl ...FF" in out
 
 
 def test_float_zero_tolerance_from_config(project, run_cli):
-    root = project({**ZERO_TESTS, "mocktcl.toml": "float_zero_tolerance = 1e-12\n"})
+    root = project({**ZERO_TESTS, "mocktcl.toml": "float_zero_tolerance = 0\n"})
     code, out = run_cli(root, "--no-cov")
-    assert "tests/test_a.tcl ..FF" in out
-    code, out = run_cli(root, "--no-cov", "--float-zero-tolerance", "0")
-    assert "tests/test_a.tcl FFFF" in out
+    assert "tests/test_a.tcl FFFFF" in out
+    code, out = run_cli(root, "--no-cov", "--float-zero-tolerance", "1e-12")
+    assert "tests/test_a.tcl ..FFF" in out
 
 
 def test_negative_float_zero_tolerance(project, run_cli):

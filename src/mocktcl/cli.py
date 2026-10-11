@@ -16,7 +16,7 @@ from .coverage import lcov as lcov_report
 from .coverage import text as text_report
 from .coverage.model import build_coverage, find_sources, instrument_project
 from .discovery import SelectionError, collect
-from .runner import RunConfig, run_files
+from .runner import DEFAULT_FLOAT_ZERO_TOLERANCE, RunConfig, run_files
 
 EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_NO_TESTS = 0, 1, 2, 5
 
@@ -47,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--fail-under", type=float, default=None, metavar="PCT",
                    help="fail if total line coverage is below PCT")
     p.add_argument("--float-zero-tolerance", type=float, default=None, metavar="TOL",
-                   help="treat numbers within TOL of 0 as equal to 0 in expect (default: 0, exact)")
+                   help=f"numbers within TOL of 0 count as 0 in expect (default: {DEFAULT_FLOAT_ZERO_TOLERANCE:g}; 0 = exact)")
     p.add_argument("--keep-tmp", action="store_true", help="keep the temp dir with jobs, results and instrumented code")
     p.add_argument("--version", action="version", version=f"mocktcl {__version__}")
     return p
@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     fail_under = args.fail_under if args.fail_under is not None else cfg.get("fail_under")
     zero_tol = args.float_zero_tolerance
     if zero_tol is None:
-        zero_tol = cfg.get("float_zero_tolerance", 0.0)
+        zero_tol = cfg.get("float_zero_tolerance", DEFAULT_FLOAT_ZERO_TOLERANCE)
     if zero_tol < 0:
         err.write(f"mocktcl: float_zero_tolerance must not be negative (got {zero_tol})")
         return EXIT_USAGE

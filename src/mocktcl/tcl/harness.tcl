@@ -114,10 +114,10 @@ proc ::mocktcl::show {v} {
 # 6.6000000000000005 doesn't fail `expect ... 6.6`.
 set ::mocktcl::float_rel_tol 1e-9
 
-# A relative tolerance is no help when one side is zero, and how close to zero
-# counts as "zero" depends on the project's units, so this absolute tolerance
-# is 0 (exact) unless the project sets float_zero_tolerance. Set from the job.
-set ::mocktcl::float_zero_tol 0
+# A relative tolerance is no help when one side is zero, so comparisons with
+# zero use this absolute tolerance instead. The project can change it with
+# float_zero_tolerance (0 = exact); the runner always sets it from the job.
+set ::mocktcl::float_zero_tol 1e-12
 
 # A number Tcl can do arithmetic with: rejects text and NaN (Inf is allowed).
 proc ::mocktcl::number {x} {
@@ -160,7 +160,7 @@ proc ::mocktcl::zero_hint {a b} {
         if {[number $zero] && [number $other] && $zero == 0
                 && ![string is entier -strict $other] && [finite $other] && abs($other) < 1e-6} {
             return "\n(if this is floating-point rounding noise, use \"expect_near <value> 0 <tolerance>\",\
-                or set float_zero_tolerance in mocktcl.toml)"
+                or change float_zero_tolerance in mocktcl.toml, currently $::mocktcl::float_zero_tol)"
         }
     }
     return ""
