@@ -86,6 +86,15 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - uses: actions/checkout@v4
+        with:
+          path: src
+          sparse-checkout: LICENSE
+          sparse-checkout-cone-mode: false
+
+      - name: Add license
+        run: cp src/LICENSE dist/LICENSE
+
       - name: Checksums
         working-directory: dist
         run: sha256sum mocktcl-* > SHA256SUMS.txt && cat SHA256SUMS.txt
