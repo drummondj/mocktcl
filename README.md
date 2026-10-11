@@ -669,6 +669,16 @@ Then open the file `coverage_html/index.html` in your web browser. Click a file 
 - **yellow** lines ran, but at least one path through an `if`/`switch` starting there was never taken,
   or a part of an `&&`/`||`/`? :` condition there was never true (or never false)
 
+Here is the report for the calculator in [`examples/calculator`](examples/calculator). The number next
+to each line number says how many times that line ran:
+
+![Coverage report for src/calc.tcl, with green, red and yellow lines](docs/images/coverage-html.png)
+
+In this example, line 34 (`return positive`) is red because no test passed a number above zero to
+`calc::sign`. Line 29, where that `if` starts, is yellow for the same reason: of its three paths
+(`if`, `elseif`, `else`), the `else` path was never taken. Line 25 is yellow because no test passed a
+number above `hi`, so `$n <= $hi` was never false.
+
 **Other report formats:**
 
 | Command | What you get |
