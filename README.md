@@ -175,6 +175,28 @@ shasum -a 256 ~/.local/bin/mocktcl  # on macOS
 
 The long string of letters and numbers it prints should match the line for your file in `SHA256SUMS.txt`.
 
+### Another way: install with Python
+
+If your computer isn't in the table in step 1 (for example, an Intel Mac), or you already use
+Python, you can install mocktcl from [PyPI](https://pypi.org/project/mocktcl/), the public
+library of Python programs. You need Python 3.11 or newer; check with `python3 --version`.
+
+The easiest tool for this is **pipx**, which installs a Python program in its own private folder so
+it can't clash with anything else on your computer:
+
+```sh
+# Install pipx (pick the line for your system):
+sudo apt-get install pipx      # Debian, Ubuntu
+sudo dnf install pipx          # Fedora, Red Hat
+brew install pipx              # macOS
+pipx ensurepath                # puts pipx's program folder on your PATH
+
+# Then close the terminal, open a new one, and install mocktcl:
+pipx install mocktcl
+```
+
+Check it with `mocktcl --version`. To move to a newer version later, run `pipx upgrade mocktcl`.
+
 ---
 
 ## 4. Your first test, step by step
@@ -670,10 +692,10 @@ Then open the file `coverage_html/index.html` in your web browser. Click a file 
 - **yellow** lines ran, but at least one path through an `if`/`switch` starting there was never taken,
   or a part of an `&&`/`||`/`? :` condition there was never true (or never false)
 
-Here is the report for the calculator in [`examples/calculator`](examples/calculator). The number next
+Here is the report for the calculator in [`examples/calculator`](https://github.com/drummondj/mocktcl/tree/main/examples/calculator). The number next
 to each line number says how many times that line ran:
 
-![Coverage report for src/calc.tcl, with green, red and yellow lines](docs/images/coverage-html.png)
+![Coverage report for src/calc.tcl, with green, red and yellow lines](https://raw.githubusercontent.com/drummondj/mocktcl/main/docs/images/coverage-html.png)
 
 In this example, line 34 (`return positive`) is red because no test passed a number above zero to
 `calc::sign`. Line 29, where that `if` starts, is yellow for the same reason: of its three paths
@@ -789,11 +811,11 @@ python3 -m venv .venv               # a private Python environment for this proj
 The test suite requires **100% line and branch coverage** of mocktcl's code. If any line or path
 isn't tested, the run fails.
 
-The plan and design notes are in [`plans/`](plans/), and [`CLAUDE.md`](CLAUDE.md) has a short
+The plan and design notes are in [`plans/`](https://github.com/drummondj/mocktcl/tree/main/plans), and [`CLAUDE.md`](https://github.com/drummondj/mocktcl/blob/main/CLAUDE.md) has a short
 guide to the code.
 
-**Making a release.** Update `version` in `pyproject.toml` and `__version__` in
-`src/mocktcl/__init__.py`, merge to `main`, then tag the commit and push the tag:
+**Making a release.** Update `__version__` in `src/mocktcl/__init__.py` (the Python package reads
+its version from there too), merge to `main`, then tag the commit and push the tag:
 
 ```sh
 git tag v0.2.0
@@ -802,7 +824,8 @@ git push origin v0.2.0
 
 GitHub Actions then tests the code, builds the Linux and macOS programs, tries each one on the example
 project, and publishes them to the [Releases page](https://github.com/drummondj/mocktcl/releases)
-together with `SHA256SUMS.txt` and `LICENSE`. To build a program on your own computer:
+together with `SHA256SUMS.txt` and `LICENSE`. It also builds the Python package and uploads it to
+[PyPI](https://pypi.org/project/mocktcl/). To build a program on your own computer:
 `.venv/bin/pip install pyinstaller && PYTHON=.venv/bin/python packaging/build.sh`.
 
 ---
@@ -810,6 +833,6 @@ together with `SHA256SUMS.txt` and `LICENSE`. To build a program on your own com
 ## 16. License
 
 mocktcl is free to use, change and share, including at work and in commercial projects, under the
-[MIT License](LICENSE). The only condition is that you keep the copyright notice and license text
+[MIT License](https://github.com/drummondj/mocktcl/blob/main/LICENSE). The only condition is that you keep the copyright notice and license text
 when you pass on copies of mocktcl itself. Your own Tcl code and tests are not affected: they stay
 yours, under whatever license you choose.
