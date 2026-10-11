@@ -616,7 +616,7 @@ src/greet.tcl      4     1  75.0%         2       1    50.0%  3
 | **Lines** | how many lines of this file hold code that can run (blank lines and comments don't count) |
 | **Miss** | how many of those lines **never ran** during the tests |
 | **Line%** | the percentage of lines that ran |
-| **Branches** | the number of different paths through the file's `if` and `switch` commands |
+| **Branches** | the number of different paths through the file's `if` and `switch` commands, plus the true and false results of each part of an `&&`, `||` or `? :` condition |
 | **BrMiss** | how many of those paths no test took |
 | **Branch%** | the percentage of paths taken |
 | **Missing** | the line numbers that never ran |
@@ -634,6 +634,28 @@ happens when the amount is 100 or less. That's a second path through the `if`, a
 reports it as missed. An `if` without an `else` still has two paths: "the condition was true" and
 "the condition was false".
 
+**Conditions with `&&` and `||`.** A condition can be made of several smaller ones:
+
+```tcl
+if {$amount > 100 && $member} {
+    set discount 10
+}
+```
+
+Two tests, one with `amount = 150, member = 1` and one with `amount = 50`, take both paths through the
+`if`. But no test ever had a big amount from someone who isn't a member, so `$member` was never false.
+mocktcl counts each part of the condition on its own: `$amount > 100` was true and false, `$member` was
+only ever true. That missing "false" shows up as a missed branch.
+
+This works for each part joined by `&&` (and) or `||` (or), and for the test before the `?` in
+`? :` (a short way to write if/else inside an expression). It covers the conditions of `if`, `elseif`,
+`while` and `for`, and the `expr` command, as long as the condition is written inside `{ }` braces.
+Remember that Tcl stops early: in `$a && $b`, when `$a` is false, `$b` is never looked at, so it counts
+as neither true nor false for that test.
+
+To count only whole `if` and `switch` paths, as older versions of mocktcl did, use
+`mocktcl --no-cov-conditions` or set `cov_conditions = false` in [the configuration file](#13-saving-your-settings-configuration-file).
+
 **Seeing it in a web page.** For an easier view, with the untested lines highlighted in red, run:
 
 ```sh
@@ -644,7 +666,8 @@ Then open the file `coverage_html/index.html` in your web browser. Click a file 
 
 - **green** lines ran
 - **red** lines never ran
-- **yellow** lines ran, but at least one path through an `if`/`switch` starting there was never taken
+- **yellow** lines ran, but at least one path through an `if`/`switch` starting there was never taken,
+  or a part of an `&&`/`||`/`? :` condition there was never true (or never false)
 
 **Other report formats:**
 
@@ -673,7 +696,8 @@ mocktcl --fail-under 80
 ```
 
 **What coverage can't see.** Code that your program builds as text and then runs with `eval` isn't
-measured. Neither are the paths inside `&&`, `||` and `? :` within `expr`.
+measured. The parts of a condition that isn't inside `{ }` (such as `if $ok ...` or `expr $a && $b`)
+aren't counted separately, because Tcl changes that text before the condition is worked out.
 
 ---
 
@@ -688,6 +712,7 @@ cov = ["src"]                      # measure only src/
 cov_omit = ["src/vendor/*"]        # but not src/vendor/
 cov_report = ["text", "html"]      # print the table and write web pages
 fail_under = 80                    # fail if line coverage is below 80%
+cov_conditions = false             # don't count && / || / ? : parts separately (default: true)
 jobs = 4                           # run 4 test files at once
 timeout = 60                       # give up on a test file after 60 seconds
 tests_dir = "tests"                # where the tests live

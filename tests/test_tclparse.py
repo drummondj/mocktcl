@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from mocktcl.tclparse import TclParseError, TclSource
@@ -123,3 +125,59 @@ def test_unterminated_braced_variable_name():
 def test_brackets_are_plain_text_in_list_quotes():
     text = '"a[b" c'
     assert [w.literal for w in TclSource(text).parse_list(0, len(text))] == ["a[b", "c"]
+
+
+def operands(expr: str) -> list[str]:
+    src = TclSource(expr)
+    return [expr[s:e] for s, e in src.expr_operands(0, len(expr))]
+
+
+@pytest.mark.parametrize(
+    "expr, expected",
+    [
+        ("$a", []),
+        ("$a > 0", []),
+        ("$a && $b", ["$a", "$b"]),
+        ("$a || $b || $c", ["$a", "$b", "$c"]),
+        ("$a && $b || $c", ["$a", "$b", "$c"]),  # the compound a && b gets no probe of its own
+        ("$a && ($b || $c)", ["$b", "$c", "$a"]),
+        ("(($a || $b)) && $c", ["$a", "$b", "$c"]),
+        ("!($a || $b) && $c", ["$a", "$b", "!($a || $b)", "$c"]),
+        ("$c ? $x : $y", ["$c"]),
+        ("$a && $b ? 1 : $c ? 2 : 3", ["$a", "$b", "$a && $b", "$c"]),
+        ("1 ? 0 ? 5 : 6 : 7", ["1", "0"]),
+        ("($a ? $b : $c) && $d", ["$a", "($a ? $b : $c)", "$d"]),
+        ("max($a || $b, 1) && rand()", ["$a", "$b", "max($a || $b, 1)", "rand()"]),
+        # strings, braces, [command substitutions] and array indexes are opaque
+        ('"x&&y" eq {a||b} && [f a && b] || $arr($i&&)', ['"x&&y" eq {a||b}', "[f a && b]", "$arr($i&&)"]),
+        ("${a b} &&\\\n\t$c", ["${a b}", "$c"]),
+        ("1.5e-3 < $x && $y in {a b}", ["1.5e-3 < $x", "$y in {a b}"]),
+        ("$a&&$b", ["$a", "$b"]),
+    ],
+)
+def test_expr_operands(expr, expected):
+    assert operands(expr) == expected
+
+
+@pytest.mark.parametrize(
+    "expr, message",
+    [
+        ("", "missing operand"),
+        ("$a &&", "missing operand"),
+        ("$a ? $b", "expected ':'"),
+        ("($a", "expected ')'"),
+        ("$a )", "unexpected token"),
+        ("f($a,)", "missing operand"),
+    ],
+)
+def test_expr_operands_errors(expr, message):
+    with pytest.raises(TclParseError, match=re.escape(message)):
+        operands(expr)
+
+
+def test_expr_operands_keep_absolute_offsets():
+    text = "if {$a && $b} {}"
+    src = TclSource(text)
+    cond = src.parse_script()[0].words[1]
+    spans = src.expr_operands(cond.content_start, cond.content_end)
+    assert [text[s:e] for s, e in spans] == ["$a", "$b"]

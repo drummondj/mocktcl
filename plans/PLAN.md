@@ -135,6 +135,22 @@ evaluates anything and never raises on input `tclsh` would accept.
     options `-exact -glob -regexp -nocase -matchvar -indexvar --`. `-` fall-through
     arms share the next body's arm. If there is no `default` arm, an implicit one
     is appended.
+  - Conditions (on by default; `--no-cov-conditions` / `cov_conditions = false`
+    turn them off): in the braced expressions of `if`/`elseif`, `expr {…}`,
+    `while` and the test of `for`, each simple operand of `&&`/`||` and each
+    `?:` condition is wrapped as `mocktcl_cond(<true id>, <false id>, OPERAND)`.
+    `TclSource.expr_operands` scans the expression: `?:`, `||` and `&&` are the
+    lowest-precedence operators, so everything between them is one opaque operand;
+    parentheses and function arguments are scanned recursively. A compound operand
+    (an `&&`/`||` chain, possibly parenthesized) gets no probe of its own, only its
+    parts (gcov-style condition coverage). Each wrapped operand is its own block
+    with arms 0 = true, 1 = false, on the line of the command. Unbraced expressions
+    and ones the scanner can't parse are left alone.
+    `mocktcl_cond` is an expr function (`::tcl::mathfunc::mocktcl_cond` in the
+    child, aliased to `::mocktcl::cond` in the parent). Function names in expr
+    can't contain `::`, so it can't be fully qualified. It returns its value
+    unchanged, so `&&`/`||` short-circuiting, `?:` results and errors for
+    non-boolean values stay the same.
   - Block numbering follows lcov: `BRDA:<line>,<block>,<arm>,<taken>`.
 
 ## Phase 3 — Tcl harness (`src/mocktcl/tcl/harness.tcl`)
@@ -146,6 +162,8 @@ path), `results`, `project_root`.
 Parent interp responsibilities:
 - Create the child interp and set up its environment:
   - aliases `::mocktcl::_l`, `::mocktcl::_b` → parent hit counters (return "").
+  - alias `::tcl::mathfunc::mocktcl_cond` → `::mocktcl::cond`, which counts the
+    true or false id and returns the value unchanged.
   - assertion wrappers defined in the child, so `info frame -1` gives the
     test-file line; each forwards to a parent alias that compares and raises
     `-errorcode {MOCKTCL ASSERT}`.
@@ -248,7 +266,9 @@ output), then a summary line with counts and duration.
 
 ## Out of scope / later
 
-- Expression-level branch coverage (`&&`, `||`, `?:`).
+- MC/DC (showing that each condition independently changes the decision). It
+  needs every combination of condition results per evaluation, on top of the
+  per-condition probes.
 - Coverage for code evaluated from dynamically built strings, or in user-created
   interps or threads.
 - Function (proc) coverage records in lcov.

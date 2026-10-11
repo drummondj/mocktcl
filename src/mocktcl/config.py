@@ -11,6 +11,7 @@ KEYS = {
     "cov": list,
     "cov_omit": list,
     "cov_report": list,
+    "cov_conditions": bool,
     "fail_under": (int, float),
     "tclsh": str,
     "jobs": int,

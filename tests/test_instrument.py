@@ -1,3 +1,4 @@
+import re
 import textwrap
 
 import pytest
@@ -11,6 +12,10 @@ namespace eval ::mocktcl {}
 array set ::H {}
 proc ::mocktcl::_l {id} { incr ::H($id); return }
 proc ::mocktcl::_b {id} { incr ::H($id); return }
+proc ::tcl::mathfunc::mocktcl_cond {t f v} {
+    if {![catch {expr {$v ? $t : $f}} id]} { incr ::H($id) }
+    return $v
+}
 """
 
 
@@ -79,8 +84,8 @@ def test_executable_lines():
 def test_branch_blocks():
     _, manifest = inst(SAMPLE)
     arms = sorted(manifest.branch_probes.values())
-    # if: then, elseif, implicit else; switch: 1*, 2*/3*, implicit default
-    assert arms == [(3, 0, 0), (3, 0, 1), (3, 0, 2), (6, 1, 0), (6, 1, 1), (6, 1, 2)]
+    # if: then, elseif, implicit else; switch: 1*, 2*/3*, implicit default; ?: true, false
+    assert arms == [(3, 0, 0), (3, 0, 1), (3, 0, 2), (6, 1, 0), (6, 1, 1), (6, 1, 2), (18, 2, 0), (18, 2, 1)]
 
 
 @requires_tcl
@@ -250,6 +255,8 @@ def test_command_substitutions_are_instrumented():
         "proc {*}$args",
         "if {x}",
         "if {x} {set a 1} else",
+        "if",
+        "if {x} {set a 1} elseif",
         "if {x} {set a 1} else {set b 2} extra",
         "switch -exact",
         "switch $x $arms",
@@ -299,3 +306,102 @@ def test_main_prints_instrumented_source(tmp_path, capsys):
 
     assert main([]) == 2
     assert "usage" in capsys.readouterr().err
+
+
+def test_condition_probes_wrap_operands():
+    text, manifest = inst("if {$a > 0 && $b ne {}} { set x 1 }\n")
+    assert "if {mocktcl_cond(5, 6, $a > 0) && mocktcl_cond(7, 8, $b ne {})}" in text
+    # if block 0 (then, implicit else), then one block per operand: true, false
+    assert sorted(manifest.branch_probes.values()) == [(1, 0, 0), (1, 0, 1), (1, 1, 0), (1, 1, 1), (1, 2, 0), (1, 2, 1)]
+
+
+@pytest.mark.parametrize(
+    "script, wrapped",
+    [
+        ("if {$a} {} elseif {$b || $c} {}", ["$b", "$c"]),
+        ("set r [expr {$a ? 1 : 2}]", ["$a"]),
+        ("while {$a && $b} { break }", ["$a", "$b"]),
+        ("for {set i 0} {$i < 3 && $ok} {incr i} {}", ["$i < 3", "$ok"]),
+        ("::if {$a && $b} {}", ["$a", "$b"]),
+    ],
+)
+def test_condition_commands(script, wrapped):
+    text, _ = inst(script)
+    assert re.findall(r"mocktcl_cond\(\d+, \d+, ([^)]*)\)", text) == wrapped
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        "if {$a} {set x 1}",  # a single operand is already covered by the if arms
+        "if $a&&$b {set x 1}",  # unbraced: Tcl substitutes before expr sees it
+        "expr $a && $b",
+        "expr {$a &&}",  # malformed: left for Tcl to report
+        "set r {$a && $b}",
+        "while {$a && $b}",  # wrong word count
+        "proc f {} {if {$a && $b} {}}",
+    ],
+)
+def test_conditions_not_instrumented(script):
+    text, _ = inst(script)
+    assert ("mocktcl_cond(" in text) == script.startswith("proc")
+
+
+def test_conditions_can_be_turned_off():
+    text, manifest = instrument("if {$a && $b} {set x 1}\n", "x.tcl", ProbeAllocator(), conditions=False)
+    assert "mocktcl_cond" not in text
+    assert len(manifest.branch_probes) == 2
+
+
+def test_multiline_condition_keeps_line_numbers():
+    script = "if {$a &&\n    ($b ||\n     $c)} {\n    set x 1\n}\nset y 2\n"
+    text, manifest = inst(script)
+    assert text.count("\n") == script.count("\n")
+    assert text.splitlines()[2].lstrip().startswith("mocktcl_cond(")
+    assert manifest.line_probes[max(manifest.line_probes)] == 6
+    assert {line for line, _, _ in manifest.branch_probes.values()} == {1}
+
+
+@requires_tcl
+def test_condition_hits():
+    script = """
+    proc f {a b} {
+        if {$a && $b} { return yes }
+        return no
+    }
+    puts [f 1 1][f 0 1][f 1 0][f 1 0]
+    """
+    original, instrumented, hits = run_both(script)
+    assert original == instrumented == "yesnonono"
+    _, manifest = inst(script)
+    counts = {key: hits.get(pid, 0) for pid, key in manifest.branch_probes.items()}
+    # block 0: if arms; block 1: $a (true 3, false 1); block 2: $b (true 1, false 2)
+    assert counts == {
+        (2, 0, 0): 1, (2, 0, 1): 3,
+        (2, 1, 0): 3, (2, 1, 1): 1,
+        (2, 2, 0): 1, (2, 2, 1): 2,
+    }
+
+
+@requires_tcl
+def test_conditions_keep_values_short_circuits_and_errors():
+    script = """
+    proc boom {} { error boom }
+    set out {}
+    lappend out [expr {0 && [boom]}] [expr {1 || [boom]}]
+    lappend out [expr {yes && "true"}] [expr {0.1+0.2 > 0.3 ? "gt" : "le"}]
+    lappend out [expr {2**70 ? 2**70 : 0}] [expr {(1 ? 0.1+0.2 : 0) * 1}]
+    lappend out [expr {1 ? 0 ? 5 : 6 : 7}] [expr {max(0 || 1, 0)}]
+    lappend out [catch {expr {"abc" && 1}} m] $m
+    lappend out [catch {expr {1 && "abc"}} m] $m
+    lappend out [catch {expr {"abc" ? 1 : 2}} m] $m
+    set i 0
+    while {$i < 3 && [incr i] > 0} {}
+    for {set j 0} {$j < 2 || 0} {incr j} {}
+    lappend out $i $j
+    namespace eval ::app { proc f {x} { expr {$x && !$x} } }
+    lappend out [::app::f 1]
+    puts $out
+    """
+    original, instrumented, _ = run_both(script)
+    assert original == instrumented

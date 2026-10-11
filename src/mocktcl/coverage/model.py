@@ -58,14 +58,14 @@ class InstrumentedProject:
     tcl_map: dict[str, str] = field(default_factory=dict)  # normalized original -> instrumented copy
 
 
-def instrument_project(files: list[Path], root: Path, outdir: Path) -> InstrumentedProject:
+def instrument_project(files: list[Path], root: Path, outdir: Path, conditions: bool = True) -> InstrumentedProject:
     alloc = ProbeAllocator()
     project = InstrumentedProject()
     outdir.mkdir(parents=True, exist_ok=True)
     for n, path in enumerate(files):
         rel = rel_to(path, root)
         text = read_source(path)
-        new_text, manifest = instrument(text, rel, alloc)
+        new_text, manifest = instrument(text, rel, alloc, conditions)
         project.manifests[rel] = manifest
         project.sources[rel] = text
         if manifest.error:

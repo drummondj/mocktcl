@@ -82,6 +82,17 @@ proc ::mocktcl::hit {id} {
     return
 }
 
+# Condition probe, called as the expr function mocktcl_cond(true, false, value)
+# around each &&/|| operand and ?: condition. It counts whether the value was
+# true or false and hands it back unchanged. A value that isn't a boolean is
+# not counted: the caller's && or ?: then raises Tcl's usual error.
+proc ::mocktcl::cond {true false value} {
+    if {![catch {expr {$value ? $true : $false}} id]} {
+        ::mocktcl::hit $id
+    }
+    return $value
+}
+
 proc ::mocktcl::instrumented {path} {
     variable job
     variable sources
@@ -402,6 +413,7 @@ proc ::mocktcl::make_child {} {
     }
     interp alias $c ::mocktcl::_l {} ::mocktcl::hit
     interp alias $c ::mocktcl::_b {} ::mocktcl::hit
+    interp alias $c ::tcl::mathfunc::mocktcl_cond {} ::mocktcl::cond
     interp alias $c ::mocktcl::_assert {} ::mocktcl::assert
     interp alias $c ::mocktcl::_mock {} ::mocktcl::mock
     interp alias $c ::mocktcl::_called {} ::mocktcl::called

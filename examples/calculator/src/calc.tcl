@@ -21,6 +21,10 @@ proc calc::div {a b} {
     return [expr {double($a) / $b}]
 }
 
+proc calc::between {n lo hi} {
+    return [expr {$n >= $lo && $n <= $hi}]
+}
+
 proc calc::sign {n} {
     if {$n < 0} {
         return negative

@@ -46,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="exclude matching source files (repeatable)")
     p.add_argument("--cov-report", action="append", default=None, metavar="TYPE[:DEST]",
                    help="text, lcov[:file], html[:dir] (repeatable; default: text)")
+    p.add_argument("--no-cov-conditions", action="store_true",
+                   help="don't measure the &&, || and ?: conditions inside if, expr, while and for")
     p.add_argument("--fail-under", type=float, default=None, metavar="PCT",
                    help="fail if total line coverage is below PCT")
     p.add_argument("--float-zero-tolerance", type=float, default=None, metavar="TOL",
@@ -106,6 +108,7 @@ def _main(argv: list[str] | None) -> int:
     timeout = args.timeout or cfg.get("timeout")
     cov_paths = args.cov or cfg.get("cov") or ["."]
     cov_omit = args.cov_omit or cfg.get("cov_omit", [])
+    cov_conditions = not args.no_cov_conditions and cfg.get("cov_conditions", True)
     fail_under = args.fail_under if args.fail_under is not None else cfg.get("fail_under")
     zero_tol = args.float_zero_tolerance
     if zero_tol is None:
@@ -136,7 +139,7 @@ def _main(argv: list[str] | None) -> int:
         project = None
         if not args.no_cov:
             sources = find_sources([Path(p) for p in cov_paths], root, [root / tests_dir], cov_omit)
-            project = instrument_project(sources, root, tmp / "instrumented")
+            project = instrument_project(sources, root, tmp / "instrumented", cov_conditions)
 
         console.header(version, len(files))
         run_cfg = RunConfig(

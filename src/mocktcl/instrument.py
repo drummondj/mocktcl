@@ -1,12 +1,18 @@
 """Coverage instrumentation of Tcl source.
 
 Inserts probe commands in front of every command in a script position, plus
-branch probes at the start of every ``if``/``switch`` arm. All insertions are
-made on the same line as the code they precede, so line numbers never shift.
+branch probes at the start of every ``if``/``switch`` arm. In the braced
+expressions of ``if``, ``expr``, ``while`` and ``for``, each operand of ``&&``
+and ``||`` and each ``?:`` condition is wrapped in a condition probe. All
+insertions are made on the same line as the code they precede, so line numbers
+never shift.
 
-Probe commands (provided by the harness, both return ""):
-    ::mocktcl::_l <id>   line/statement probe
-    ::mocktcl::_b <id>   branch-arm probe
+Probes (provided by the harness):
+    ::mocktcl::_l <id>                line/statement probe; returns ""
+    ::mocktcl::_b <id>                branch-arm probe; returns ""
+    mocktcl_cond(<true>, <false>, x)  expr function; counts <true> or <false>
+                                      by the value of x and returns x unchanged.
+                                      expr function names can't contain ::
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ from .tclparse import Command, TclParseError, TclSource, Word
 
 LINE_PROBE = "::mocktcl::_l"
 BRANCH_PROBE = "::mocktcl::_b"
+COND_PROBE = "mocktcl_cond"
 
 SCRIPT = "script"
 OO_DEFINE = "oo"
@@ -123,6 +130,13 @@ SCRIPT_ARGS: dict[str, Resolver] = {
     "oo::objdefine": _fixed(3, 2, ctx=OO_DEFINE),
 }
 
+# Commands whose arguments are expressions (if/elseif are handled with the arms).
+EXPR_ARGS: dict[str, Resolver] = {
+    "expr": _fixed(2, 1),
+    "while": _fixed(3, 1),
+    "for": _fixed(5, 2),
+}
+
 OO_DEFINE_ARGS: dict[str, Resolver] = {
     "method": _oo_method,
     "constructor": _fixed(3, 2),
@@ -157,10 +171,11 @@ class ProbeAllocator:
 
 
 class _Instrumenter:
-    def __init__(self, text: str, manifest: FileManifest, alloc: ProbeAllocator):
+    def __init__(self, text: str, manifest: FileManifest, alloc: ProbeAllocator, conditions: bool):
         self.src = TclSource(text)
         self.manifest = manifest
         self.alloc = alloc
+        self.conditions = conditions
         self.inserts: list[tuple[int, int, str]] = []  # (offset, seq, text)
         self.blocks = 0
 
@@ -188,6 +203,9 @@ class _Instrumenter:
         if name is None:
             return
         name = name[2:] if name.startswith("::") else name
+        if ctx == SCRIPT and name in EXPR_ARGS:
+            for index, _ in EXPR_ARGS[name](cmd):
+                self.expression(cmd, cmd.words[index])
         if ctx == SCRIPT and name == "if":
             self.if_command(cmd)
             return
@@ -202,10 +220,28 @@ class _Instrumenter:
 
     # -- branches -----------------------------------------------------------
 
-    def branch_probe(self, line: int, block: int, arm: int) -> str:
+    def branch_id(self, line: int, block: int, arm: int) -> int:
         pid = self.alloc.take()
         self.manifest.branch_probes[pid] = (line, block, arm)
-        return f"{BRANCH_PROBE} {pid}"
+        return pid
+
+    def branch_probe(self, line: int, block: int, arm: int) -> str:
+        return f"{BRANCH_PROBE} {self.branch_id(line, block, arm)}"
+
+    def expression(self, cmd: Command, word: Word) -> None:
+        """Wrap each &&/|| operand and ?: condition: one block, arms true (0) and false (1)."""
+        if not self.conditions or word.kind != "braced":
+            return
+        try:
+            spans = self.src.expr_operands(word.content_start, word.content_end)
+        except TclParseError:
+            return  # leave it to Tcl to report
+        for start, end in sorted(spans, key=lambda s: (s[0], -s[1])):  # outer spans first
+            block = self.blocks
+            self.blocks += 1
+            true, false = self.branch_id(cmd.line, block, 0), self.branch_id(cmd.line, block, 1)
+            self.insert(start, f"{COND_PROBE}({true}, {false}, ")
+            self.insert(end, ")")
 
     def arms(self, cmd: Command, bodies: list[Word], has_default: bool, implicit_at: int, implicit_text: str) -> None:
         """Instrument arm bodies; add branch probes when every arm is braced."""
@@ -223,10 +259,14 @@ class _Instrumenter:
     def if_command(self, cmd: Command) -> None:
         words, n = cmd.words, len(cmd.words)
         bodies: list[Word] = []
+        conditions: list[Word] = []
         has_else = False
         i = 1
         while True:
-            i += 1  # skip condition
+            if i >= n:
+                return  # malformed
+            conditions.append(words[i])
+            i += 1
             if i < n and cmd.literal(i) == "then":
                 i += 1
             if i >= n:
@@ -237,7 +277,7 @@ class _Instrumenter:
                 break
             kw = cmd.literal(i)
             if kw == "elseif":
-                i += 1  # now at the condition, skipped at the top of the loop
+                i += 1  # now at the condition, collected at the top of the loop
                 continue
             if kw == "else":
                 i += 1
@@ -250,6 +290,8 @@ class _Instrumenter:
         if i != n:
             return
         self.arms(cmd, bodies, has_else, cmd.end, " else {{{probe}}}")
+        for cond in conditions:
+            self.expression(cmd, cond)
 
     def switch_command(self, cmd: Command) -> None:
         words, n = cmd.words, len(cmd.words)
@@ -296,11 +338,16 @@ class _Instrumenter:
         return "".join(out)
 
 
-def instrument(text: str, path: str, alloc: ProbeAllocator | None = None) -> tuple[str, FileManifest]:
-    """Return (instrumented_text, manifest). On parse errors the text is unchanged."""
+def instrument(
+    text: str, path: str, alloc: ProbeAllocator | None = None, conditions: bool = True
+) -> tuple[str, FileManifest]:
+    """Return (instrumented_text, manifest). On parse errors the text is unchanged.
+
+    ``conditions`` turns on probes for &&/|| operands and ?: conditions.
+    """
     alloc = alloc or ProbeAllocator()
     manifest = FileManifest(path)
-    inst = _Instrumenter(text, manifest, alloc)
+    inst = _Instrumenter(text, manifest, alloc, conditions)
     try:
         inst.script(0, len(text), SCRIPT)
     except TclParseError as e:

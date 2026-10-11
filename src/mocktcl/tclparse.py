@@ -10,6 +10,7 @@ variable substitution, backslash-newline and the ``{*}`` expansion prefix.
 from __future__ import annotations
 
 import bisect
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 __all__ = ["TclParseError", "Word", "Command", "TclSource"]
@@ -83,6 +84,18 @@ class TclSource:
                 return words
             w, i = self._word(i, end, nested=False, list_mode=True)
             words.append(w)
+
+    def expr_operands(self, start: int, end: int) -> list[tuple[int, int]]:
+        """(start, end) of each ``&&``/``||`` operand and ``?:`` condition in an expression.
+
+        Everything else in the expression is left opaque. Raises TclParseError on
+        anything the scanner doesn't understand.
+        """
+        self._substs.append([])  # [command substitutions] are skipped, not recorded
+        try:
+            return _ExprScanner(self, start, end).scan()
+        finally:
+            self._substs.pop()
 
     # -- internals ----------------------------------------------------------
 
@@ -279,6 +292,127 @@ class TclSource:
                     j += 1
             j += 1
         return j
+
+
+_EXPR_PUNCT = ("&&", "||", "?", ":", "(", ")", ",")
+_ATOM = "atom"
+
+
+class _ExprScanner:
+    """Finds the operands of ``?:``, ``||`` and ``&&`` in a Tcl expression (see expr(n)).
+
+    Those are the lowest-precedence operators, so anything between them is one
+    opaque operand. Parentheses and function arguments are scanned recursively.
+    """
+
+    def __init__(self, src: TclSource, start: int, end: int):
+        self.src = src
+        self.end = end
+        self.tokens = self._tokenize(start, end)
+        self.k = 0
+        self.spans: list[tuple[int, int]] = []
+
+    def scan(self) -> list[tuple[int, int]]:
+        self._ternary()
+        if self.k < len(self.tokens):
+            raise self._error("unexpected token")
+        return self.spans
+
+    def _tokenize(self, i: int, end: int) -> list[tuple[str, int, int]]:
+        src, t = self.src, self.src.text
+        tokens: list[tuple[str, int, int]] = []
+        while i < end:
+            c = t[i]
+            if c in _WS:
+                i += 1
+                continue
+            if c == "\\" and i + 1 < end and t[i + 1] == "\n":
+                i += 2
+                continue
+            kind, j = _ATOM, i + 1
+            if t[i : i + 2] in _EXPR_PUNCT:
+                kind, j = t[i : i + 2], i + 2
+            elif c in _EXPR_PUNCT:
+                kind = c
+            elif c == "$":
+                j = src._variable(i, end)
+            elif c == "[":
+                j = src._bracket(i, end)
+            elif c == "{":
+                j = src._match_brace(i, end) + 1
+            elif c == '"':
+                j = src._quoted(i, end, list_mode=False)
+            elif c.isalnum() or c in "_.":
+                while j < end and (t[j].isalnum() or t[j] in "_."):
+                    j += 1
+            tokens.append((kind, i, j))
+            i = j
+        return tokens
+
+    def _peek(self) -> str | None:
+        return self.tokens[self.k][0] if self.k < len(self.tokens) else None
+
+    def _error(self, message: str) -> TclParseError:
+        offset = self.tokens[self.k][1] if self.k < len(self.tokens) else self.end
+        return self.src._error(f"expression: {message}", offset)
+
+    def _expect(self, kind: str) -> int:
+        if self._peek() != kind:
+            raise self._error(f"expected '{kind}'")
+        self.k += 1
+        return self.tokens[self.k - 1][2]
+
+    # Each rule returns (start, end, compound): compound means the span is itself an
+    # &&/|| chain, possibly in parentheses. Only its simple parts get probes.
+
+    def _ternary(self) -> tuple[int, int, bool]:
+        start, end, compound = self._or()
+        if self._peek() == "?":
+            self.spans.append((start, end))
+            self.k += 1
+            self._ternary()
+            self._expect(":")
+            _, end, _ = self._ternary()
+            compound = False
+        return start, end, compound
+
+    def _or(self) -> tuple[int, int, bool]:
+        return self._chain("||", self._and)
+
+    def _and(self) -> tuple[int, int, bool]:
+        return self._chain("&&", self._operand)
+
+    def _chain(self, op: str, part: Callable[[], tuple[int, int, bool]]) -> tuple[int, int, bool]:
+        parts = [part()]
+        while self._peek() == op:
+            self.k += 1
+            parts.append(part())
+        if len(parts) == 1:
+            return parts[0]
+        self.spans.extend((start, end) for start, end, compound in parts if not compound)
+        return parts[0][0], parts[-1][1], True
+
+    def _operand(self) -> tuple[int, int, bool]:
+        start = end = -1
+        groups: list[bool] = []  # per token: is it a parenthesized compound?
+        while (kind := self._peek()) is not None and (kind == _ATOM or kind == "("):
+            if start < 0:
+                start = self.tokens[self.k][1]
+            if kind == _ATOM:
+                end = self.tokens[self.k][2]
+                self.k += 1
+                groups.append(False)
+                continue
+            self.k += 1  # ( of a group or a function's argument list
+            args = [] if self._peek() == ")" else [self._ternary()]
+            while self._peek() == ",":
+                self.k += 1
+                args.append(self._ternary())
+            end = self._expect(")")
+            groups.append(len(args) == 1 and args[0][2])
+        if start < 0:
+            raise self._error("missing operand")
+        return start, end, groups == [True]
 
 
 def _literal(content: str) -> str | None:
