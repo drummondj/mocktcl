@@ -333,13 +333,40 @@ tests/
 
 | Command | The test passes when... | Example |
 |---|---|---|
-| `expect A B` | A equals B. Numbers are compared as numbers, so `2` equals `2.0`. | `expect [add 1 2] 3` |
+| `expect A B` | A equals B. Numbers are compared as numbers, so `2` equals `2.0`, and tiny rounding errors in decimals are ignored ([see below](#comparing-decimal-numbers)). | `expect [add 1 2] 3` |
 | `expect_not A B` | A does **not** equal B | `expect_not [new_id] ""` |
+| `expect_near A B T` | the number A is within T of the number B | `expect_near $slack 0.12 0.001` |
 | `expect_contains A B` | the text B appears somewhere inside A | `expect_contains [greet Ada] "Ada"` |
 | `expect_list A B` | lists A and B hold the same items, in any order | `expect_list [colors] {red green blue}` |
 | `expect_list_contains A B` | list A holds every item in list B (A may hold more) | `expect_list_contains [colors] {red}` |
 | `expect_error {script} pattern` | running the script causes an error, and the message matches the pattern. `*` means "any text". | `expect_error {divide 1 0} "*divide by zero*"` |
 | `expect_called name N` | the mock called `name` ran exactly N times in this test (see [mocks](#7-replacing-commands-during-a-test-mocks)) | `expect_called send_email 1` |
+
+### Comparing decimal numbers
+
+Computers store most decimal numbers slightly inaccurately. In Tcl, `expr 10 * 0.66`
+gives `6.6000000000000005`, not `6.6`. This isn't a bug in your code. It's how
+every programming language handles decimals.
+
+`expect` and `expect_not` allow for this automatically. When either value is a decimal number,
+the two count as equal if they differ by less than one part in a billion. So this passes:
+
+```tcl
+expect [expr 10 * 0.66] 6.6
+```
+
+A real mistake still fails: `6.0` is never treated as equal to `6.6`. Whole numbers and text are always
+compared exactly.
+
+There are two cases where you should use `expect_near` instead, and give the allowed difference yourself:
+
+- **When the answer should be zero.** "One part in a billion" of zero is zero, so `expect [expr {0.1 + 0.2 - 0.3}] 0` fails
+  (Tcl gives `5.55e-17`). Write `expect_near [expr {0.1 + 0.2 - 0.3}] 0 1e-12` instead.
+- **When "close enough" has a real meaning**, such as a timing value that only needs to be correct to the nearest picosecond:
+
+  ```tcl
+  expect_near $delay 6.6 0.001   ;# passes for anything from 6.599 to 6.601
+  ```
 
 **Adding your own failure message.** Every check accepts an extra last argument: a message
 that's shown if the check fails. This helps explain *why* the value matters:

@@ -171,8 +171,9 @@ Assertions (all take an optional trailing failure message):
 
 | command | passes when |
 |---|---|
-| `expect a b` | `a eq b`, or both are numbers and `a == b` |
+| `expect a b` | `a eq b`; or both are numbers, equal as numbers, or (if either is non-integer) within a relative tolerance of 1e-9 |
 | `expect_not a b` | negation of `expect` |
+| `expect_near a b tol` (extra) | both are numbers and `abs(a - b) <= tol` |
 | `expect_contains s sub` | `sub` is a substring of `s` |
 | `expect_list l1 l2` | same multiset of elements, any order |
 | `expect_list_contains l1 l2` | every element of `l2` is in `l1` |

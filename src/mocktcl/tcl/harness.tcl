@@ -109,14 +109,40 @@ proc ::mocktcl::show {v} {
     return "\"$v\""
 }
 
+# Floating-point values that differ by less than this fraction of the larger
+# one are treated as equal, so rounding noise such as 10 * 0.66 giving
+# 6.6000000000000005 doesn't fail `expect ... 6.6`.
+set ::mocktcl::float_rel_tol 1e-9
+
+# A number Tcl can do arithmetic with: rejects text and NaN (Inf is allowed).
+proc ::mocktcl::number {x} {
+    return [expr {[string is double -strict $x] && ![catch {expr {double($x)}}]}]
+}
+
+proc ::mocktcl::finite {x} {
+    return [expr {abs(double($x)) <= 1.7976931348623157e308}]
+}
+
+# Equality used by expect/expect_not: exact for strings and integers,
+# within a relative tolerance when either value is a non-integer number.
 proc ::mocktcl::equal {a b} {
     if {$a eq $b} {
         return 1
     }
-    if {[string is double -strict $a] && [string is double -strict $b]} {
-        return [expr {$a == $b}]
+    if {![number $a] || ![number $b]} {
+        return 0
     }
-    return 0
+    if {$a == $b} {
+        return 1
+    }
+    if {[string is entier -strict $a] && [string is entier -strict $b]} {
+        return 0
+    }
+    if {![finite $a] || ![finite $b]} {
+        return 0
+    }
+    set tol [expr {$::mocktcl::float_rel_tol * max(abs(double($a)), abs(double($b)))}]
+    return [expr {abs($a - $b) <= $tol}]
 }
 
 proc ::mocktcl::usage {kind syntax frame} {
@@ -137,6 +163,25 @@ proc ::mocktcl::check_expect_not {actual unexpected} {
         return ""
     }
     return "expected value other than [show $unexpected]"
+}
+
+proc ::mocktcl::check_expect_near {actual expected tolerance} {
+    foreach {name v} [list actual $actual expected $expected tolerance $tolerance] {
+        if {![number $v]} {
+            error "$name must be a number but got \"$v\""
+        }
+    }
+    if {$tolerance < 0} {
+        error "tolerance must not be negative but got \"$tolerance\""
+    }
+    set diff [expr {abs($actual - $expected)}]
+    # Allow for rounding noise in the subtraction itself, so values exactly on
+    # the boundary (6.601 vs 6.6 +/- 0.001) pass.
+    set noise [expr {$::mocktcl::float_rel_tol * max(abs(double($actual)), abs(double($expected)))}]
+    if {$diff <= $tolerance + $noise} {
+        return ""
+    }
+    return "expected [show $expected] +/- $tolerance but got [show $actual] (difference [format %.6g $diff])"
 }
 
 proc ::mocktcl::check_expect_contains {haystack needle} {
@@ -226,7 +271,7 @@ proc ::mocktcl::check_expect_error {rc result pattern} {
 # Usage from child wrappers: _assert KIND FRAME ARGS...
 proc ::mocktcl::assert {kind frame args} {
     set arity [dict get {
-        expect 2 expect_not 2 expect_contains 2 expect_list 2
+        expect 2 expect_not 2 expect_near 3 expect_contains 2 expect_list 2
         expect_list_contains 2 expect_called 2 expect_error 3
     } $kind]
     set n [llength $args]
@@ -234,6 +279,7 @@ proc ::mocktcl::assert {kind frame args} {
         set syntax [dict get {
             expect "actual expected ?message?"
             expect_not "actual unexpected ?message?"
+            expect_near "actual expected tolerance ?message?"
             expect_contains "string substring ?message?"
             expect_list "list1 list2 ?message?"
             expect_list_contains "list subset ?message?"
@@ -349,7 +395,8 @@ proc ::mocktcl::make_child {} {
     $c eval [list set ::auto_path $::auto_path]
     $c eval {
         foreach ::mocktcl::kind {
-            expect expect_not expect_contains expect_list expect_list_contains
+            expect expect_not expect_near expect_contains expect_list
+            expect_list_contains
         } {
             proc ::$::mocktcl::kind {args} [string map [list KIND $::mocktcl::kind] {
                 ::mocktcl::_assert KIND [info frame -1] {*}$args
