@@ -28,6 +28,7 @@ and the design and status are in `plans/PLAN.md`. Read both before making large 
 
 - Instrumentation must never change line numbers. Probes go on the same line, followed by `; `.
 - Probe commands (`::mocktcl::_l`, `::mocktcl::_b`) must return the empty string. An injected `else`/`default` arm must not change what a command returns.
+- The condition probe `mocktcl_cond(true, false, value)` is an expr function and must return `value` unchanged, so `&&`/`||` short-circuiting, `?:` results and errors are unaffected. It's the one framework name that isn't fully qualified: expr function names can't contain `::`.
 - When the parser can't handle a file, sourcing it must still work (fall back to the original text, with no coverage).
 - Framework logic stays in the parent interp, so user mocks of built-ins (`string`, `clock`, …) can't break assertions.
 - Harness results go to the results file, never to stdout, which belongs to the user's code.

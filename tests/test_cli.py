@@ -3,6 +3,8 @@
 import shutil
 from pathlib import Path
 
+import pytest
+
 from mocktcl.cli import main
 
 from .conftest import requires_tcl
@@ -37,9 +39,11 @@ def test_example_project(run_cli, tmp_path):
     shutil.copytree(EXAMPLE, root)
     code, out = run_cli(root, "--cov-report", "text", "--cov-report", "lcov", "--cov-report", "html")
     assert code == 0, out
-    assert "11 passed, 1 skipped" in out
+    assert "12 passed, 1 skipped" in out
     assert "src/calc.tcl" in out and "src/report.tcl" in out
-    assert (root / "lcov.info").is_file()
+    lcov = (root / "lcov.info").read_text()
+    # calc::between: "$n <= $hi" (block 2 on line 25) was never false
+    assert "BRDA:25,2,0,1\nBRDA:25,2,1,0" in lcov
     assert (root / "coverage_html" / "index.html").is_file()
 
 
@@ -164,6 +168,45 @@ def test_bad_config(project, run_cli):
     code, out = run_cli(root)
     assert code == 2
     assert "unknown option 'bogus'" in out
+
+
+CONDITIONS = {
+    "src/c.tcl": """
+        proc c::both {a b} {
+            if {$a && [string is digit $b]} { return yes }
+            return no
+        }
+        namespace eval c {}
+    """,
+    "tests/test_c.tcl": """
+        namespace eval c {}
+        source src/c.tcl
+        proc test_both {} {
+            expect [c::both 1 7] yes
+            expect [c::both 0 7] no
+            expect_error {c::both maybe 7} "*expected boolean*"
+        }
+    """,
+}
+
+
+def test_condition_coverage(project, run_cli):
+    root = project(CONDITIONS)
+    code, out = run_cli(root, "--cov-report", "lcov")
+    assert code == 0, out
+    lcov = (root / "lcov.info").read_text()
+    # block 0: the if arms; block 1: $a (true, false); block 2: [string is digit $b] (never false)
+    for brda in ("2,0,0,1", "2,0,1,1", "2,1,0,1", "2,1,1,1", "2,2,0,1", "2,2,1,0"):
+        assert f"BRDA:{brda}" in lcov
+    assert "BRF:6\nBRH:5" in lcov
+
+
+@pytest.mark.parametrize("config", ["", "cov_conditions = false\n"])
+def test_condition_coverage_off(project, run_cli, config):
+    root = project({**CONDITIONS, "mocktcl.toml": config})
+    code, out = run_cli(root, "--cov-report", "lcov", *([] if config else ["--no-cov-conditions"]))
+    assert code == 0, out
+    assert "BRF:2\nBRH:2" in (root / "lcov.info").read_text()
 
 
 def test_parallel_and_exitfirst(project, run_cli):

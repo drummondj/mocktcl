@@ -19,6 +19,13 @@ proc test_sign {} {
     expect [calc::sign 0] zero
 }
 
+proc test_between {} {
+    expect [calc::between 5 1 10] 1
+    expect [calc::between 0 1 10] 0
+    # Nothing checks a number above hi, so the report shows that
+    # "$n <= $hi" was never false.
+}
+
 proc test_describe {} {
     expect [calc::describe 1] one
     expect_contains [calc::describe 4] "four"
