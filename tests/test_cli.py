@@ -1,11 +1,14 @@
 """CLI behaviour: selection, exit codes, config and coverage reports."""
 
+import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from mocktcl.cli import main
 
-from .conftest import requires_tcl
+from .conftest import TCLSH, requires_tcl
 
 pytestmark = requires_tcl
 
@@ -259,3 +262,37 @@ def test_module_entry_point(monkeypatch, capsys):
         runpy.run_module("mocktcl", run_name="__main__")
     assert exc.value.code == 0
     assert "mocktcl 0.1.0" in capsys.readouterr().out
+
+
+def test_closed_output_pipe_exits_quietly(project, monkeypatch, tmp_path):
+    root = project(SIMPLE)
+    read_end, write_end = os.pipe()
+    os.close(read_end)  # nobody will read: writes fail with EPIPE, as with `mocktcl | head`
+    closed = os.fdopen(write_end, "w")
+    monkeypatch.setattr("sys.stdout", closed)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path / "tmp"))
+    (tmp_path / "tmp").mkdir()
+    code = main(["--root", str(root), "--tclsh", TCLSH, "-v"])
+    assert code == 141
+    assert list((tmp_path / "tmp").iterdir()) == []  # temp dir still cleaned up
+    closed.write("more output after the pipe closed\n")
+    closed.flush()  # now goes to devnull instead of raising
+    closed.close()
+
+
+def test_closed_output_pipe_end_to_end(project):
+    root = project(SIMPLE)
+    read_end, write_end = os.pipe()
+    os.close(read_end)  # closed before mocktcl starts, so its very first write fails
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "mocktcl", "--root", str(root), "--tclsh", TCLSH, "-v"],
+            stdout=write_end,
+            stderr=subprocess.PIPE,
+            timeout=60,
+        )
+    finally:
+        os.close(write_end)
+    stderr = proc.stderr.decode()
+    assert proc.returncode == 141
+    assert "Traceback" not in stderr and "BrokenPipeError" not in stderr

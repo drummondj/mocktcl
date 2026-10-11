@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from .discovery import SelectionError, collect
 from .runner import DEFAULT_FLOAT_ZERO_TOLERANCE, RunConfig, run_files
 
 EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_NO_TESTS = 0, 1, 2, 5
+EXIT_BROKEN_PIPE = 141  # 128 + SIGPIPE, what shell tools report in the same situation
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -76,6 +78,19 @@ def parse_reports(specs: list[str], root: Path) -> list[tuple[str, Path | None]]
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except BrokenPipeError:
+        # Whatever was reading our output stopped early (`mocktcl | head`).
+        # Stop quietly; send further stdout to devnull so Python's final
+        # flush at exit doesn't fail a second time.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        os.close(devnull)
+        return EXIT_BROKEN_PIPE
+
+
+def _main(argv: list[str] | None) -> int:
     args = build_parser().parse_args(argv)
     root = (args.root or Path.cwd()).resolve()
     err = Console(sys.stderr, color=False)
