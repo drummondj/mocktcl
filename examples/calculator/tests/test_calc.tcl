@@ -1,4 +1,6 @@
 source [file join [file dirname [info script]] helpers.tcl]
+# load_src is our own helper (defined in tests/helpers.tcl), not a mocktcl command.
+# It sources a file from the project's src/ folder, wherever mocktcl is run from.
 load_src calc.tcl
 
 proc test_add {} {
