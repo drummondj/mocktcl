@@ -28,6 +28,7 @@ This guide explains everything step by step.
 13. [Saving your settings (configuration file)](#13-saving-your-settings-configuration-file)
 14. [Troubleshooting](#14-troubleshooting)
 15. [For people working on mocktcl itself](#15-for-people-working-on-mocktcl-itself)
+16. [License](#16-license)
 
 ---
 
@@ -803,3 +804,12 @@ GitHub Actions then tests the code, builds the Linux and macOS programs, tries e
 project, and publishes them to the [Releases page](https://github.com/drummondj/mocktcl/releases)
 together with `SHA256SUMS.txt`. To build a program on your own computer:
 `.venv/bin/pip install pyinstaller && PYTHON=.venv/bin/python packaging/build.sh`.
+
+---
+
+## 16. License
+
+mocktcl is free to use, change and share, including at work and in commercial projects, under the
+[MIT License](LICENSE). The only condition is that you keep the copyright notice and license text
+when you pass on copies of mocktcl itself. Your own Tcl code and tests are not affected: they stay
+yours, under whatever license you choose.
