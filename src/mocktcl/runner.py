@@ -55,6 +55,7 @@ class RunConfig:
     capture: bool = True
     jobs: int = 1
     timeout: float | None = None
+    float_zero_tolerance: float = 0.0
 
 
 _PROC_FRAME = re.compile(r'\(procedure "(?:::)?([^"]+)" line (\d+)\)')
@@ -83,6 +84,7 @@ def run_file(tf: TestFile, cfg: RunConfig, index: int) -> FileResult:
         "filter": cfg.keyword.lower(),
         "instrumented": tcl_dict(cfg.tcl_map),
         "results": str(results_file),
+        "float_zero_tol": repr(float(cfg.float_zero_tolerance)),
     }
     job_file.write_text(tcl_dict(job), encoding="utf-8")
     result = FileResult(tf.rel)

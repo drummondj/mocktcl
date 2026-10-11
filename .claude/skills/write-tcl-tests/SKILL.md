@@ -46,7 +46,8 @@ proc test_not_ready {} { skip "waiting on upstream fix" }
 Rules:
 - Each assertion takes an optional extra argument, a custom failure message.
 - `expect`/`expect_not` compare decimal numbers with a relative tolerance of 1e-9, and compare integers
-  and strings exactly. Use `expect_near` for comparisons against zero and for explicit tolerances.
+  and strings exactly. Comparisons with zero are exact unless the project sets `float_zero_tolerance`
+  (mocktcl.toml or `--float-zero-tolerance`). Otherwise use `expect_near ... 0 tol`. Use `expect_near` for explicit tolerances.
 - See `examples/sdc` for testing proc-less scripts such as SDC constraints. Read them at global level
   (`uplevel #0 source`), mock the tool's commands, and inspect their arguments with `mock_calls`.
 - A mock lasts for the test it was created in (including `before_each`). A mock created at file

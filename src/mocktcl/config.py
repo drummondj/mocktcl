@@ -15,6 +15,7 @@ KEYS = {
     "tclsh": str,
     "jobs": int,
     "timeout": (int, float),
+    "float_zero_tolerance": (int, float),
 }
 
 

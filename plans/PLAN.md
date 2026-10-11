@@ -171,7 +171,7 @@ Assertions (all take an optional trailing failure message):
 
 | command | passes when |
 |---|---|
-| `expect a b` | `a eq b`; or both are numbers, equal as numbers, or (if either is non-integer) within a relative tolerance of 1e-9 |
+| `expect a b` | `a eq b`; or both are numbers, equal as numbers, or (if either is non-integer) within a relative tolerance of 1e-9. If one side is 0, an absolute tolerance is used instead: `float_zero_tolerance`, which defaults to 0 (exact). A failed comparison with 0 by a tiny decimal adds a hint. |
 | `expect_not a b` | negation of `expect` |
 | `expect_near a b tol` (extra) | both are numbers and `abs(a - b) <= tol` |
 | `expect_contains s sub` | `sub` is a substring of `s` |

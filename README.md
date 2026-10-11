@@ -358,15 +358,36 @@ expect [expr 10 * 0.66] 6.6
 A real mistake still fails: `6.0` is never treated as equal to `6.6`. Whole numbers and text are always
 compared exactly.
 
-There are two cases where you should use `expect_near` instead, and give the allowed difference yourself:
+**When the answer should be zero.** "One part in a billion" of zero is zero, so this fails, because Tcl
+gives `5.551115123125783e-17` rather than `0`:
 
-- **When the answer should be zero.** "One part in a billion" of zero is zero, so `expect [expr {0.1 + 0.2 - 0.3}] 0` fails
-  (Tcl gives `5.55e-17`). Write `expect_near [expr {0.1 + 0.2 - 0.3}] 0 1e-12` instead.
-- **When "close enough" has a real meaning**, such as a timing value that only needs to be correct to the nearest picosecond:
+```tcl
+expect [expr {0.1 + 0.2 - 0.3}] 0
+```
 
-  ```tcl
-  expect_near $delay 6.6 0.001   ;# passes for anything from 6.599 to 6.601
-  ```
+mocktcl can't tell on its own whether a tiny number like that is rounding noise or a real, very small value.
+That depends on the units your project uses. When this kind of check fails, the message points this out:
+
+```
+expect failed: expected "0" but got "5.551115123125783e-17"
+(if this is floating-point rounding noise, use "expect_near <value> 0 <tolerance>", or set float_zero_tolerance in mocktcl.toml)
+```
+
+You have two ways to fix it:
+
+- **For one check**, give the allowed difference yourself: `expect_near [expr {0.1 + 0.2 - 0.3}] 0 1e-12`.
+- **For the whole project**, add `float_zero_tolerance = 1e-12` to your
+  [configuration file](#13-saving-your-settings-configuration-file). After that, `expect` treats any number
+  within 1e-12 of zero as zero. This is a safe choice when your values are in units like ns, ps, pF or um,
+  where a real value as small as 1e-12 never occurs. Don't use it if your values are in base units such as
+  seconds or farads, where 1e-12 is a normal value (one picosecond or one picofarad).
+
+**When "close enough" has a real meaning**, such as a timing value that only needs to be correct to the
+nearest picosecond, use `expect_near` and give the allowed difference:
+
+```tcl
+expect_near $delay 6.6 0.001   ;# delay in ns: passes for anything from 6.599 to 6.601
+```
 
 **Adding your own failure message.** Every check accepts an extra last argument: a message
 that's shown if the check fails. This helps explain *why* the value matters:
@@ -541,6 +562,7 @@ Run these from your project folder.
 | Show `puts` output as the tests run | `mocktcl -s` |
 | Give up on a test file that takes longer than 60 seconds | `mocktcl --timeout 60` |
 | Use a particular Tcl | `mocktcl --tclsh /path/to/tclsh8.6` |
+| Treat numbers within 1e-12 of zero as zero in `expect` ([why](#comparing-decimal-numbers)) | `mocktcl --float-zero-tolerance 1e-12` |
 | See every option | `mocktcl --help` |
 
 By default mocktcl captures anything your tests print with `puts`, and shows it only for
@@ -668,6 +690,7 @@ jobs = 4                           # run 4 test files at once
 timeout = 60                       # give up on a test file after 60 seconds
 tests_dir = "tests"                # where the tests live
 tclsh = "/opt/homebrew/opt/tcl-tk@8/bin/tclsh8.6"   # which Tcl to use (handy on a Mac)
+float_zero_tolerance = 1e-12       # treat numbers within 1e-12 of zero as zero in expect
 ```
 
 Every line is optional. Anything you type on the command line overrides the file.

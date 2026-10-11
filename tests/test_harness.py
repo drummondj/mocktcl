@@ -320,3 +320,43 @@ def test_expect_near(project, run_cli):
     assert 'actual must be a number but got "abc"' in out
     assert 'actual must be a number but got "NaN"' in out
     assert 'should be "expect_near actual expected tolerance ?message?"' in out
+
+
+ZERO_TESTS = {"tests/test_a.tcl": """
+    proc test_noise {} { expect [expr {0.1 + 0.2 - 0.3}] 0 }
+    proc test_zero_first {} { expect 0.0 [expr {0.1 + 0.2 - 0.3}] }
+    proc test_real_difference {} { expect 0.5 0 }
+    proc test_integer {} { expect 1 0 }
+"""}
+
+
+def test_zero_comparison_is_exact_by_default_with_hint(project, run_cli):
+    root = project(ZERO_TESTS)
+    code, out = run_cli(root, "--no-cov")
+    assert code == 1
+    assert "tests/test_a.tcl FFFF" in out
+    hint = '(if this is floating-point rounding noise, use "expect_near <value> 0 <tolerance>", ' \
+        "or set float_zero_tolerance in mocktcl.toml)"
+    assert out.count(hint) == 2  # only for the tiny decimal differences
+    assert 'expected "0" but got "0.5"\n\n' in out
+
+
+def test_float_zero_tolerance_from_cli(project, run_cli):
+    root = project(ZERO_TESTS)
+    code, out = run_cli(root, "--no-cov", "--float-zero-tolerance", "1e-12")
+    assert "tests/test_a.tcl ..FF" in out
+
+
+def test_float_zero_tolerance_from_config(project, run_cli):
+    root = project({**ZERO_TESTS, "mocktcl.toml": "float_zero_tolerance = 1e-12\n"})
+    code, out = run_cli(root, "--no-cov")
+    assert "tests/test_a.tcl ..FF" in out
+    code, out = run_cli(root, "--no-cov", "--float-zero-tolerance", "0")
+    assert "tests/test_a.tcl FFFF" in out
+
+
+def test_negative_float_zero_tolerance(project, run_cli):
+    root = project(ZERO_TESTS)
+    code, out = run_cli(root, "--float-zero-tolerance", "-1")
+    assert code == 2
+    assert "float_zero_tolerance must not be negative" in out

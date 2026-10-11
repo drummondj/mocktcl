@@ -114,6 +114,11 @@ proc ::mocktcl::show {v} {
 # 6.6000000000000005 doesn't fail `expect ... 6.6`.
 set ::mocktcl::float_rel_tol 1e-9
 
+# A relative tolerance is no help when one side is zero, and how close to zero
+# counts as "zero" depends on the project's units, so this absolute tolerance
+# is 0 (exact) unless the project sets float_zero_tolerance. Set from the job.
+set ::mocktcl::float_zero_tol 0
+
 # A number Tcl can do arithmetic with: rejects text and NaN (Inf is allowed).
 proc ::mocktcl::number {x} {
     return [expr {[string is double -strict $x] && ![catch {expr {double($x)}}]}]
@@ -141,8 +146,24 @@ proc ::mocktcl::equal {a b} {
     if {![finite $a] || ![finite $b]} {
         return 0
     }
+    if {$a == 0 || $b == 0} {
+        return [expr {abs($a - $b) <= $::mocktcl::float_zero_tol}]
+    }
     set tol [expr {$::mocktcl::float_rel_tol * max(abs(double($a)), abs(double($b)))}]
     return [expr {abs($a - $b) <= $tol}]
+}
+
+# When a comparison with zero fails by a tiny decimal amount, it is probably
+# floating-point rounding noise: say how to allow for it.
+proc ::mocktcl::zero_hint {a b} {
+    foreach {zero other} [list $a $b $b $a] {
+        if {[number $zero] && [number $other] && $zero == 0
+                && ![string is entier -strict $other] && [finite $other] && abs($other) < 1e-6} {
+            return "\n(if this is floating-point rounding noise, use \"expect_near <value> 0 <tolerance>\",\
+                or set float_zero_tolerance in mocktcl.toml)"
+        }
+    }
+    return ""
 }
 
 proc ::mocktcl::usage {kind syntax frame} {
@@ -155,7 +176,7 @@ proc ::mocktcl::check_expect {actual expected} {
     if {[equal $actual $expected]} {
         return ""
     }
-    return "expected [show $expected] but got [show $actual]"
+    return "expected [show $expected] but got [show $actual][zero_hint $actual $expected]"
 }
 
 proc ::mocktcl::check_expect_not {actual unexpected} {
@@ -616,6 +637,7 @@ proc ::mocktcl::main {jobfile} {
     fconfigure $f -encoding utf-8
     set job [read $f]
     close $f
+    set ::mocktcl::float_zero_tol [dict get $job float_zero_tol]
     set out [open [dict get $job results] w]
     fconfigure $out -encoding utf-8 -translation lf
 
